@@ -6,7 +6,7 @@ A native Windows port of [chattymin/PokeTokenBar](https://github.com/chattymin/P
 
 ## What works
 
-- Windows 10/11 notification-area tray icon + Qt/PySide6 window, with current companion and stage progress in the tray tooltip and a right-click toggle for the floating pet
+- Windows 10/11 notification-area tray icon + modern Qt Quick/QML window on PySide6, with current companion and stage progress in the tray tooltip and a right-click toggle for the floating pet
 - Opt-in interactive floating desktop pet: animated egg/Pokemon, 48–192 px sizing, drag-and-drop position persistence, hover usage/official-limit callout, click-to-open, context-menu hide, and transient limit/full-reset bubbles
 - Optional owned representative Pokemon for the desktop pet, independent of the actively progressing companion and preserving shiny variants
 - Configurable Windows balloon/toast-style notifications: deduplicated official-limit warnings (80% warning and 95% critical by default) plus an independent toggle for hatch/evolution/graduation/Rare Candy events

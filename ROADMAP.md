@@ -185,6 +185,7 @@ Quedan fóra, salvo que resolvan un problema visible en Windows:
 
 ## Rexistro de entregas
 
+- [x] Migrar a xanela principal a unha interface funcional Qt Quick/QML, conservando a bandexa, a mascota flotante, o estado local e as accións do xogo.
 - [x] Auditar a implementación inicial e marcar unicamente requisitos verificables.
 - [x] Engadir a mascota flotante configurable, persistente e adaptada aos cambios de pantalla.
 - [x] Separar Bag e Shop e engadir confirmacións, motivos de bloqueo e resposta inmediata.

@@ -110,6 +110,7 @@ from .notifications import (
 )
 from .pet_logic import PET_DEFAULT_SIZE, PET_MAX_SIZE, PET_MIN_SIZE, PET_SIZE_STEP, normalize_pet_size, settings_bool
 from .pokemon import EGG_HATCH_THRESHOLD, PokeAPIClient, egg_price, phase_threshold
+from .qml_ui import QmlMainWindow
 from .state import (
     GameState,
     StateStore,
@@ -1800,7 +1801,7 @@ class TrayController(QObject):
             )
         )
 
-        self.window = MainWindow(self.state, self.settings, self.api)
+        self.window = QmlMainWindow(self.state, self.settings, self.api)
         self.window.refresh_requested.connect(self._refresh_and_reschedule)
         self.window.pet_visibility_changed.connect(self._set_pet_visible)
         self.window.pet_size_changed.connect(self._set_pet_size)
@@ -1857,6 +1858,11 @@ class TrayController(QObject):
         QTimer.singleShot(0, self.refresh)
 
     def _wire_shop_buttons(self) -> None:
+        if isinstance(self.window, QmlMainWindow):
+            self.window.use_item_requested.connect(self._use_item)
+            self.window.buy_item_requested.connect(self._buy_item)
+            self.window.buy_egg_requested.connect(self._buy_egg)
+            return
         self.window.use_candy_btn.clicked.connect(lambda: self._use_item("rare_candy"))
         self.window.use_mint_btn.clicked.connect(lambda: self._use_item("mint"))
         self.window.buy_candy_btn.clicked.connect(lambda: self._buy_item("rare_candy"))
