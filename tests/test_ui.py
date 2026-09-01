@@ -11,8 +11,9 @@ from unittest.mock import Mock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, QSettings, Qt
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtQuickWidgets import QQuickWidget
-from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QScrollArea
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QProgressBar, QScrollArea
 
 from poketokenbar_windows.models import (
     LimitWindow,
@@ -21,6 +22,11 @@ from poketokenbar_windows.models import (
     UsageSnapshot,
 )
 from poketokenbar_windows.pokemon import EGG_HATCH_THRESHOLD, RARE_CANDY_XP
+from poketokenbar_windows.floating_pet import (
+    AnimatedSpriteFrameStabilizer,
+    FloatingPetWindow,
+    HoverCallout,
+)
 from poketokenbar_windows.qml_ui import QmlMainWindow, QmlViewModel
 from poketokenbar_windows.state import CatchRecord, GameState, MonState
 from poketokenbar_windows.ui import (
