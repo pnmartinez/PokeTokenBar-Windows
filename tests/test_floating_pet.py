@@ -127,7 +127,7 @@ class PetAlertTests(unittest.TestCase):
         )
         self.assertEqual(
             remaining_alerts[0].body,
-            "Codex 5-hour: 10% remaining (90% used).",
+            "Codex 5-hour: 90% used.",
         )
 
     def test_new_time_window_rearms_but_small_reset_drift_does_not(self):
@@ -161,9 +161,21 @@ class PetAlertTests(unittest.TestCase):
         )
         alerts, memory = evaluate_pet_alerts({"codex": status}, now=self.now)
         self.assertIn("warning", [alert.severity for alert in alerts])
+        reset_alert = next(alert for alert in alerts if alert.key.startswith("reset|"))
+        self.assertIn("expires in 8d 0h", reset_alert.body)
         status.reset_credits[0].expires_at = self.now + timedelta(hours=72)
-        alerts, _ = evaluate_pet_alerts({"codex": status}, memory, self.now)
+        alerts, _ = evaluate_pet_alerts(
+            {"codex": status},
+            memory,
+            self.now,
+            time_mode="datetime",
+        )
         self.assertIn("critical", [alert.severity for alert in alerts])
+        reset_alert = next(alert for alert in alerts if alert.key.startswith("reset|"))
+        self.assertIn(
+            (self.now + timedelta(hours=72)).strftime("expires %d %b, %H:%M"),
+            reset_alert.body,
+        )
 
     def test_hover_and_alerts_ignore_codex_spend_bucket(self):
         status = ProviderLimits(
@@ -176,11 +188,61 @@ class PetAlertTests(unittest.TestCase):
         snapshot = UsageSnapshot(providers={"codex": ProviderUsage("codex", today_tokens=1234)})
         self.assertIn("5-hour: 30% used", pet_hover_text(snapshot, {"codex": status}))
         self.assertIn(
-            "5-hour: 70% remaining",
+            "5-hour: 70% left",
             pet_hover_text(snapshot, {"codex": status}, "remaining"),
         )
         alerts, _ = evaluate_pet_alerts({"codex": status}, now=self.now)
         self.assertEqual(alerts, [])
+
+    def test_hover_preferences_match_tray_visibility_fields(self):
+        status = ProviderLimits(
+            provider="codex",
+            windows=[LimitWindow("5-hour", 30, self.now + timedelta(hours=4))],
+        )
+        snapshot = UsageSnapshot(
+            providers={
+                "codex": ProviderUsage(
+                    "codex",
+                    today_tokens=1234,
+                    today_cost=2.5,
+                )
+            }
+        )
+        text = pet_hover_text(
+            snapshot,
+            {"codex": status},
+            show_tokens=False,
+            show_cost=True,
+            show_limit=False,
+        )
+        self.assertNotIn("tokens", text)
+        self.assertIn("$2.50", text)
+        self.assertNotIn("5-hour", text)
+
+    def test_hover_uses_regular_codex_limit_until_reserve_is_active(self):
+        regular = LimitWindow(
+            "Weekly",
+            40,
+            self.now + timedelta(days=4),
+            duration_minutes=10_080,
+            identifier="codex.secondary",
+        )
+        reserve = LimitWindow(
+            "Luna Reserve",
+            95,
+            self.now + timedelta(days=5),
+            duration_minutes=10_080,
+            identifier="base_model_inference.primary",
+        )
+        snapshot = UsageSnapshot(
+            providers={"codex": ProviderUsage("codex", today_tokens=1234)}
+        )
+        status = ProviderLimits(provider="codex", windows=[regular, reserve])
+        self.assertIn("Weekly: 40% used", pet_hover_text(snapshot, {"codex": status}))
+        self.assertNotIn("Reserve", pet_hover_text(snapshot, {"codex": status}))
+
+        status.reserve_active = True
+        self.assertIn("Luna Reserve: 95% used", pet_hover_text(snapshot, {"codex": status}))
 
     def test_hover_does_not_surface_limits_for_unused_provider(self):
         snapshot = UsageSnapshot(providers={"claude": ProviderUsage("claude", today_tokens=500)})

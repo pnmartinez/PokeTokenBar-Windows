@@ -176,14 +176,22 @@ def fetch_claude_limits(timeout: float = 12.0) -> ProviderLimits:
         return _claude_fallback("Claude limits returned an unexpected payload")
 
     windows: list[LimitWindow] = []
-    for key, label in (("five_hour", "5-hour"), ("seven_day", "Weekly")):
+    for key, label, duration in (
+        ("five_hour", "5-hour", 300),
+        ("seven_day", "Weekly", 10_080),
+    ):
         raw = data.get(key)
         if isinstance(raw, dict) and raw.get("utilization") is not None:
             try:
                 used = float(raw["utilization"])
             except (TypeError, ValueError):
                 continue
-            windows.append(LimitWindow(label=label, used_percent=used, resets_at=_parse_datetime(raw.get("resets_at"))))
+            windows.append(LimitWindow(
+                label=label,
+                used_percent=used,
+                resets_at=_parse_datetime(raw.get("resets_at")),
+                duration_minutes=duration,
+            ))
 
     # Newer Claude usage responses can include a generalized limits[] list.
     for item in data.get("limits", []) if isinstance(data.get("limits"), list) else []:
@@ -203,7 +211,13 @@ def fetch_claude_limits(timeout: float = 12.0) -> ProviderLimits:
         model = scope.get("model") if isinstance(scope.get("model"), dict) else {}
         display = model.get("display_name") if isinstance(model, dict) else None
         label = str(display or item.get("group") or kind or "Limit").replace("_", " ").title()
-        windows.append(LimitWindow(label=label, used_percent=used, resets_at=_parse_datetime(item.get("resets_at"))))
+        duration = 300 if kind == "session" else (10_080 if kind.startswith("weekly") else None)
+        windows.append(LimitWindow(
+            label=label,
+            used_percent=used,
+            resets_at=_parse_datetime(item.get("resets_at")),
+            duration_minutes=duration,
+        ))
 
     result = ProviderLimits(
         provider="claude",
@@ -518,6 +532,7 @@ def fetch_codex_limits(timeout: float = 20.0) -> ProviderLimits:
 
     windows: list[LimitWindow] = []
     plan: str | None = None
+    reserve_active = False
     for index, snapshot in enumerate(snapshots):
         limit_id = str(
             snapshot.get("limitId")
@@ -525,6 +540,13 @@ def fetch_codex_limits(timeout: float = 20.0) -> ProviderLimits:
             or ("codex" if index == 0 else f"codex-{index}")
         )
         name = _codex_bucket_display_name(snapshot)
+        if index == 0:
+            reached_type = str(
+                snapshot.get("rateLimitReachedType")
+                or snapshot.get("rate_limit_reached_type")
+                or ""
+            )
+            reserve_active = reached_type.strip().lower() == "rate_limit_reached"
         plan = plan or snapshot.get("planType")
         parsed_windows = [
             window
@@ -569,6 +591,7 @@ def fetch_codex_limits(timeout: float = 20.0) -> ProviderLimits:
         provider="codex",
         plan=str(plan).title() if plan else None,
         windows=windows,
+        reserve_active=reserve_active,
         reset_credits_available=reset_credits_available,
         reset_credits=reset_credits,
     )

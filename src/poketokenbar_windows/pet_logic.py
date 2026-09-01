@@ -8,14 +8,17 @@ from typing import Any, Mapping, Sequence
 
 from .formatting import (
     DEFAULT_LIMIT_DISPLAY_MODE,
+    DEFAULT_LIMIT_TIME_MODE,
     LimitDisplayMode,
+    LimitTimeMode,
     compact_tokens,
-    format_limit_datetime,
+    format_limit_event_time,
     highest_relevant_limit,
     limit_alert_body,
     limit_percent_text,
     limit_reset_expiry,
     limit_reset_urgency,
+    money,
 )
 from .models import ProviderLimits, UsageSnapshot
 
@@ -227,6 +230,7 @@ def evaluate_pet_alerts(
     warning_percent: float = PET_WARNING_PERCENT,
     critical_percent: float = PET_CRITICAL_PERCENT,
     display_mode: LimitDisplayMode = DEFAULT_LIMIT_DISPLAY_MODE,
+    time_mode: LimitTimeMode = DEFAULT_LIMIT_TIME_MODE,
 ) -> tuple[list[PetAlert], dict[str, AlertMemory]]:
     """Edge-trigger limit and reset alerts while preserving one state per time window."""
     updated = dict(memory or {})
@@ -264,7 +268,9 @@ def evaluate_pet_alerts(
             tier=reset_tier,
             title="Full reset expires soon" if reset_tier == 2 else "Full reset reminder",
             body=(
-                f"{provider_label} full reset expires {format_limit_datetime(expiry)}."
+                f"{provider_label} full reset "
+                + format_limit_event_time("expires", expiry, time_mode, now)
+                + "."
                 if expiry is not None else f"{provider_label} full reset expiry is unknown."
             ),
             priority=100.0 if reset_tier == 2 else 80.0,
@@ -283,25 +289,40 @@ def pet_hover_text(
     snapshot: UsageSnapshot,
     limits_by_provider: Mapping[str, ProviderLimits],
     display_mode: LimitDisplayMode = DEFAULT_LIMIT_DISPLAY_MODE,
+    *,
+    time_mode: LimitTimeMode = DEFAULT_LIMIT_TIME_MODE,
+    show_tokens: bool = True,
+    show_cost: bool = False,
+    show_limit: bool = True,
 ) -> str:
-    lines = [f"{compact_tokens(snapshot.today_tokens)} tokens today"]
-    selected = highest_relevant_limit(snapshot, limits_by_provider)
-    if selected is not None:
-        provider, window = selected
-        lines.append(
-            f"{provider.title()} {window.label}: "
-            f"{limit_percent_text(window.used_percent, display_mode)}"
-        )
+    lines: list[str] = []
+    if show_tokens:
+        lines.append(f"{compact_tokens(snapshot.today_tokens)} tokens today")
+    if show_cost:
+        lines.append(f"{money(snapshot.today_cost)} estimated cost today")
+    if show_limit:
+        selected = highest_relevant_limit(snapshot, limits_by_provider)
+        if selected is not None:
+            provider, window = selected
+            lines.append(
+                f"{provider.title()} {window.label}: "
+                f"{limit_percent_text(window.used_percent, display_mode, compact=True)}"
+            )
 
     reset_warnings: list[tuple[float, str]] = []
-    for provider, status in limits_by_provider.items():
-        urgency = limit_reset_urgency(status)
-        expiry = limit_reset_expiry(status)
-        if urgency != "neutral" and expiry is not None:
-            marker = "Critical" if urgency == "critical" else "Warning"
-            reset_warnings.append(
-                (expiry.timestamp(), f"{marker}: {provider.title()} full reset expires {format_limit_datetime(expiry)}")
-            )
+    if show_limit:
+        for provider, status in limits_by_provider.items():
+            urgency = limit_reset_urgency(status)
+            expiry = limit_reset_expiry(status)
+            if urgency != "neutral" and expiry is not None:
+                marker = "Critical" if urgency == "critical" else "Warning"
+                reset_warnings.append(
+                    (
+                        expiry.timestamp(),
+                        f"{marker}: {provider.title()} full reset "
+                        + format_limit_event_time("expires", expiry, time_mode),
+                    )
+                )
     if reset_warnings:
         lines.append(min(reset_warnings, key=lambda item: item[0])[1])
     return "\n".join(lines)

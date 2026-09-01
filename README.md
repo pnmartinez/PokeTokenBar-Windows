@@ -6,9 +6,9 @@ A native Windows port of [chattymin/PokeTokenBar](https://github.com/chattymin/P
 
 ## What works
 
-- Windows 10/11 notification-area tray icon + modern Qt Quick/QML window on PySide6, with current companion and stage progress in the tray tooltip and a right-click toggle for the floating pet
-- Opt-in interactive floating desktop pet: animated egg/Pokemon, 48–192 px sizing, drag-and-drop position persistence, hover usage/official-limit callout, click-to-open, context-menu hide, and transient limit/full-reset bubbles
-- Optional owned representative Pokemon for the desktop pet, independent of the actively progressing companion and preserving shiny variants
+- Windows 10/11 notification-area tray icon + Qt/PySide6 window, with current companion and stage progress in the tray tooltip and a right-click toggle for the floating pet
+- Opt-in interactive floating desktop pet: animated egg/Pokemon, 48–192 px sizing, drag-and-drop position persistence, hover fields shared with the tray, click-to-open, a context menu matching the tray, and transient limit/full-reset bubbles
+- Optional owned representative Pokemon for the desktop pet, independent of the actively progressing companion and preserving shiny variants; returning to Follow current companion switches immediately to the active egg/Pokemon
 - Configurable Windows balloon/toast-style notifications: deduplicated official-limit warnings (80% warning and 95% critical by default) plus an independent toggle for hatch/evolution/graduation/Rare Candy events
 - Animated Gen-V Pokemon sprites with static fallback, fetched and cached at runtime
 - Egg -> hatch -> real evolution path -> graduation progression
@@ -17,10 +17,11 @@ A native Windows port of [chattymin/PokeTokenBar](https://github.com/chattymin/P
 - Bag and token shop: Rare Candy, Mint, Shiny Charm, normal/Uncommon/Rare eggs
 - Separate Home, Collection, Bag, Shop, and Settings areas; paged Pokédex, Shiny sprite toggle, catch history, evolution line, and short in-app celebrations
 - Configurable light/dark/system theme, refresh interval, limit thresholds, used/remaining percentages, tray fields, notifications, Pokémon-name language, and save import/export
-- One explicit Used/Remaining selector shared by Home, tray, desktop-pet hover, and limit alerts; alert thresholds remain clearly defined as quota used
-- Optional 5-hour depletion forecasts with reset countdowns, stale/error states, deduplicated warning/critical alerts, and Codex Luna Reserve below the headline 5-hour/weekly limits
+- One upstream-style segmented Used/Remaining selector shared by Home, tray, and desktop-pet hover; compact surfaces use "left", Home gauges follow the selected mode, while warning/critical copy, thresholds, rewards, and risk colors always mean quota used
+- A shared Time left/Date & time selector keeps resets, depletion forecasts, reset-credit expiry and related warnings in one consistent temporal format; countdown forecasts retain the compact "full in ~2h" style, while absolute values use a short date and time
+- Optional timed-limit depletion forecasts with explicit insufficient-data states; Codex Luna Reserve stays visible in Home (as unavailable when Codex omits that bucket) but only replaces the regular allowance on tray/hover after regular usage is exhausted
 - Pokémon-style companion progress shown consistently as `Lv. 0`–`Lv. 100`
-- Deferred first window: real usage and limit data is rendered before the UI appears, followed by a Poké Ball reveal using a runtime-fetched PokeAPI item sprite with a drawn fallback
+- Deferred first window: real usage and limit data is rendered before the UI appears, followed by a Poké Ball reveal in both the main window and floating pet using a runtime-fetched PokeAPI item sprite with a drawn fallback; later representative changes use the same Poké Ball transition instead of a generic loader
 - Edge-triggered Rare Candy rewards when an official time window reaches 100%, with upstream-compatible first-snapshot seeding and stable identities that ignore one-second reset-time drift
 - Install-time usage baseline: pre-install usage is never retroactively converted into growth or shop currency
 - Collection/catch history and persistent state under `%APPDATA%\PokeTokenBar-Windows`

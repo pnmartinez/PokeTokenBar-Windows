@@ -7,7 +7,7 @@ import sys
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,6 +36,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -64,27 +65,38 @@ from PySide6.QtWidgets import (
 from .formatting import (
     DEFAULT_FORECAST_ENABLED,
     DEFAULT_LIMIT_DISPLAY_MODE,
+    DEFAULT_LIMIT_TIME_MODE,
     FORECAST_ENABLED_KEY,
     LIMIT_DISPLAY_MODE_KEY,
+    LIMIT_TIME_MODE_KEY,
     LimitDisplayMode,
+    LimitTimeMode,
     companion_level_text,
     compact_tokens,
+    format_limit_event_time,
     highest_relevant_limit,
+    is_reserve_window,
     limit_alert_body,
-    limit_display_percent,
     limit_forecast,
+    limit_forecast_unavailable_reason,
     limit_percent_text,
     limit_reset_expiry,
     limit_reset_tray_warning,
     money,
     normalize_limit_display_mode,
+    normalize_limit_time_mode,
     ordered_limit_windows,
     provider_limit_rows,
 )
 from .floating_pet import (
+    MENU_OPEN_LABEL,
+    MENU_PET_VISIBILITY_LABEL,
+    MENU_QUIT_LABEL,
+    MENU_REFRESH_LABEL,
     PET_ALERTS_KEY,
     PET_ENABLED_KEY,
     PET_SIZE_KEY,
+    AnimatedSpriteFrameStabilizer,
     FloatingPetController,
 )
 from .limits import fetch_all_limits
@@ -199,6 +211,7 @@ def tray_tooltip(
     show_cost: bool = False,
     show_limit: bool = True,
     limit_display_mode: LimitDisplayMode = DEFAULT_LIMIT_DISPLAY_MODE,
+    limit_time_mode: LimitTimeMode = DEFAULT_LIMIT_TIME_MODE,
 ) -> str:
     parts: list[str] = []
     if show_tokens:
@@ -213,7 +226,10 @@ def tray_tooltip(
 
     warnings: list[tuple[float, str]] = []
     for limits in result.limits.values():
-        warning = limit_reset_tray_warning(limits)
+        warning = limit_reset_tray_warning(
+            limits,
+            time_mode=limit_time_mode,
+        )
         expiry = limit_reset_expiry(limits)
         if warning and expiry is not None:
             warnings.append((expiry.timestamp(), warning))
@@ -223,9 +239,9 @@ def tray_tooltip(
             provider, window = selected
             parts.append(
                 f"{provider.title()} {window.label}: "
-                f"{limit_percent_text(window.used_percent, limit_display_mode)}"
+                f"{limit_percent_text(window.used_percent, limit_display_mode, compact=True)}"
             )
-    if warnings:
+    if show_limit and warnings:
         parts.append(min(warnings, key=lambda item: item[0])[1])
     return f"{APP_NAME} · {' · '.join(parts)}"
 
@@ -629,6 +645,7 @@ class MainWindow(QMainWindow):
         self.settings = settings
         self.api = api
         self.movie: QMovie | None = None
+        self.frame_stabilizer = AnimatedSpriteFrameStabilizer()
         self.reveal_timer = QTimer(self)
         self.reveal_timer.setInterval(70)
         self.reveal_timer.timeout.connect(self._advance_companion_reveal)
@@ -878,7 +895,21 @@ class MainWindow(QMainWindow):
     def _choose_representative(self) -> None:
         if self.representative_combo.signalsBlocked():
             return
-        self.representative_changed.emit(self.representative_combo.currentData())
+        self.representative_changed.emit(
+            self._representative_selection_data(
+                self.representative_combo.currentData()
+            )
+        )
+
+    @staticmethod
+    def _representative_selection_data(value: object) -> tuple[int, bool] | None:
+        """Normalize QVariantList data back to the tuple stored by the app."""
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            try:
+                return int(value[0]), bool(value[1])
+            except (TypeError, ValueError):
+                return None
+        return None
 
     def _build_shop(self) -> QWidget:
         root = QWidget()
@@ -992,25 +1023,63 @@ class MainWindow(QMainWindow):
         limits_layout = QVBoxLayout(limits_group)
         display_row = QHBoxLayout()
         display_row.addWidget(QLabel("Display official limits as"))
-        self.limit_display_combo = QComboBox()
-        self.limit_display_combo.addItem("Used · quota consumed", "used")
-        self.limit_display_combo.addItem("Remaining · quota left", "remaining")
         display_mode = normalize_limit_display_mode(
             self.settings.value(
                 LIMIT_DISPLAY_MODE_KEY,
                 DEFAULT_LIMIT_DISPLAY_MODE,
             )
         )
-        self.limit_display_combo.setCurrentIndex(
-            max(0, self.limit_display_combo.findData(display_mode))
-        )
-        self.limit_display_combo.currentIndexChanged.connect(
-            lambda: self._save_preference(
+        self.limit_display_toggle = QFrame()
+        self.limit_display_toggle.setObjectName("LimitModeToggle")
+        toggle_layout = QHBoxLayout(self.limit_display_toggle)
+        toggle_layout.setContentsMargins(0, 0, 0, 0)
+        toggle_layout.setSpacing(0)
+        self.limit_display_group = QButtonGroup(self.limit_display_toggle)
+        self.limit_display_group.setExclusive(True)
+        self.limit_used_button = QPushButton("Used")
+        self.limit_remaining_button = QPushButton("Remaining")
+        for button, mode in (
+            (self.limit_used_button, "used"),
+            (self.limit_remaining_button, "remaining"),
+        ):
+            button.setObjectName(
+                "LimitModeUsedSegment" if mode == "used" else "LimitModeRemainingSegment"
+            )
+            button.setProperty("limitModeSegment", True)
+            button.setCheckable(True)
+            button.setProperty("limitMode", mode)
+            button.setFixedWidth(112)
+            button.setToolTip(
+                "Show quota consumed" if mode == "used" else "Show quota left"
+            )
+            self.limit_display_group.addButton(button)
+            toggle_layout.addWidget(button)
+        self.limit_used_button.setChecked(display_mode == "used")
+        self.limit_remaining_button.setChecked(display_mode == "remaining")
+        self.limit_display_group.buttonClicked.connect(
+            lambda button: self._save_preference(
                 LIMIT_DISPLAY_MODE_KEY,
-                str(self.limit_display_combo.currentData()),
+                str(button.property("limitMode")),
             )
         )
-        display_row.addWidget(self.limit_display_combo)
+        self.limit_display_toggle.setStyleSheet(
+            "QPushButton[limitModeSegment='true'] {"
+            "  border: 1px solid palette(mid); padding: 5px 12px; margin: 0;"
+            "  background: palette(button);"
+            "}"
+            "QPushButton#LimitModeUsedSegment {"
+            "  border-top-left-radius: 6px; border-bottom-left-radius: 6px;"
+            "  border-right-width: 0;"
+            "}"
+            "QPushButton#LimitModeRemainingSegment {"
+            "  border-top-right-radius: 6px; border-bottom-right-radius: 6px;"
+            "}"
+            "QPushButton[limitModeSegment='true']:checked {"
+            "  background: #2563eb; color: white; border-color: #2563eb;"
+            "  font-weight: 600;"
+            "}"
+        )
+        display_row.addWidget(self.limit_display_toggle)
         display_row.addStretch(1)
         limits_layout.addLayout(display_row)
         display_hint = QLabel(
@@ -1020,14 +1089,85 @@ class MainWindow(QMainWindow):
         display_hint.setWordWrap(True)
         display_hint.setStyleSheet("color: #6b7280;")
         limits_layout.addWidget(display_hint)
+        time_row = QHBoxLayout()
+        time_row.addWidget(QLabel("Show limit times as"))
+        time_mode = normalize_limit_time_mode(
+            self.settings.value(
+                LIMIT_TIME_MODE_KEY,
+                DEFAULT_LIMIT_TIME_MODE,
+            )
+        )
+        self.limit_time_toggle = QFrame()
+        self.limit_time_toggle.setObjectName("LimitTimeModeToggle")
+        time_toggle_layout = QHBoxLayout(self.limit_time_toggle)
+        time_toggle_layout.setContentsMargins(0, 0, 0, 0)
+        time_toggle_layout.setSpacing(0)
+        self.limit_time_group = QButtonGroup(self.limit_time_toggle)
+        self.limit_time_group.setExclusive(True)
+        self.limit_time_remaining_button = QPushButton("Time left")
+        self.limit_time_datetime_button = QPushButton("Date & time")
+        for button, mode in (
+            (self.limit_time_remaining_button, "remaining"),
+            (self.limit_time_datetime_button, "datetime"),
+        ):
+            button.setObjectName(
+                "LimitTimeRemainingSegment"
+                if mode == "remaining"
+                else "LimitTimeDatetimeSegment"
+            )
+            button.setProperty("limitTimeModeSegment", True)
+            button.setCheckable(True)
+            button.setProperty("limitTimeMode", mode)
+            button.setFixedWidth(112)
+            button.setToolTip(
+                "Show compact countdowns"
+                if mode == "remaining"
+                else "Show a short date and time"
+            )
+            self.limit_time_group.addButton(button)
+            time_toggle_layout.addWidget(button)
+        self.limit_time_remaining_button.setChecked(time_mode == "remaining")
+        self.limit_time_datetime_button.setChecked(time_mode == "datetime")
+        self.limit_time_group.buttonClicked.connect(
+            lambda button: self._save_preference(
+                LIMIT_TIME_MODE_KEY,
+                str(button.property("limitTimeMode")),
+            )
+        )
+        self.limit_time_toggle.setStyleSheet(
+            "QPushButton[limitTimeModeSegment='true'] {"
+            "  border: 1px solid palette(mid); padding: 5px 12px; margin: 0;"
+            "  background: palette(button);"
+            "}"
+            "QPushButton#LimitTimeRemainingSegment {"
+            "  border-top-left-radius: 6px; border-bottom-left-radius: 6px;"
+            "  border-right-width: 0;"
+            "}"
+            "QPushButton#LimitTimeDatetimeSegment {"
+            "  border-top-right-radius: 6px; border-bottom-right-radius: 6px;"
+            "}"
+            "QPushButton[limitTimeModeSegment='true']:checked {"
+            "  background: #2563eb; color: white; border-color: #2563eb;"
+            "  font-weight: 600;"
+            "}"
+        )
+        time_row.addWidget(self.limit_time_toggle)
+        time_row.addStretch(1)
+        limits_layout.addLayout(time_row)
+        time_hint = QLabel(
+            "Applies to resets, depletion forecasts, reset-credit expiry and related warnings."
+        )
+        time_hint.setWordWrap(True)
+        time_hint.setStyleSheet("color: #6b7280;")
+        limits_layout.addWidget(time_hint)
         self.forecast_check = self._setting_check(
-            "Show 5-hour depletion forecast",
+            "Show depletion forecast for timed limits",
             FORECAST_ENABLED_KEY,
             DEFAULT_FORECAST_ENABLED,
         )
         self.forecast_check.setToolTip(
-            "Uses the average quota consumption since the current 5-hour window began "
-            "to estimate whether it will reach 100% before reset."
+            "Uses average quota consumption since each known window began. "
+            "When a forecast cannot be calculated, the limit row explains why."
         )
         limits_layout.addWidget(self.forecast_check)
         self.limit_notifications_check = self._setting_check(
@@ -1234,29 +1374,47 @@ class MainWindow(QMainWindow):
 
         self.limits_list.clear()
         any_limits = False
+        time_mode = normalize_limit_time_mode(
+            self.settings.value(
+                LIMIT_TIME_MODE_KEY,
+                DEFAULT_LIMIT_TIME_MODE,
+            )
+        )
         for key, limits in result.limits.items():
             label = PROVIDER_LABELS.get(key, key.title())
             ordered_windows = ordered_limit_windows(limits)
-            for index, row in enumerate(
-                provider_limit_rows(
-                    label,
-                    limits,
-                    display_mode=normalize_limit_display_mode(
-                        self.settings.value(
-                            LIMIT_DISPLAY_MODE_KEY,
-                            DEFAULT_LIMIT_DISPLAY_MODE,
-                        )
-                    ),
-                )
+            rows = provider_limit_rows(
+                label,
+                limits,
+                display_mode=normalize_limit_display_mode(
+                    self.settings.value(
+                        LIMIT_DISPLAY_MODE_KEY,
+                        DEFAULT_LIMIT_DISPLAY_MODE,
+                    )
+                ),
+                time_mode=time_mode,
+            )
+            for window in ordered_windows:
+                any_limits = True
+                item = QListWidgetItem()
+                widget = self._limit_widget(label, window)
+                item.setSizeHint(widget.sizeHint())
+                self.limits_list.addItem(item)
+                self.limits_list.setItemWidget(item, widget)
+            if key.lower() == "codex" and not any(
+                is_reserve_window(window) for window in ordered_windows
             ):
                 any_limits = True
-                if index < len(ordered_windows):
-                    item = QListWidgetItem()
-                    widget = self._limit_widget(label, ordered_windows[index])
-                    item.setSizeHint(widget.sizeHint())
-                    self.limits_list.addItem(item)
-                    self.limits_list.setItemWidget(item, widget)
-                    continue
+                item = QListWidgetItem()
+                widget = self._unavailable_limit_widget(
+                    label,
+                    "Luna Reserve",
+                )
+                item.setSizeHint(widget.sizeHint())
+                self.limits_list.addItem(item)
+                self.limits_list.setItemWidget(item, widget)
+            for row in rows[len(ordered_windows):]:
+                any_limits = True
                 item = QListWidgetItem(row.text)
                 if row.urgency != "neutral":
                     item.setForeground(QColor("#b91c1c" if row.urgency == "critical" else "#b45309"))
@@ -1325,37 +1483,47 @@ class MainWindow(QMainWindow):
                 DEFAULT_LIMIT_DISPLAY_MODE,
             )
         )
-        value = limit_display_percent(used, display_mode)
+        time_mode = normalize_limit_time_mode(
+            self.settings.value(
+                LIMIT_TIME_MODE_KEY,
+                DEFAULT_LIMIT_TIME_MODE,
+            )
+        )
         detail = ""
+        now = datetime.now().astimezone()
         if window.resets_at is not None:
-            now = datetime.now().astimezone()
-            reset = window.resets_at
-            if reset.tzinfo is None:
-                now = now.replace(tzinfo=None)
-            else:
-                now = now.astimezone(reset.tzinfo)
-            seconds = max(0, int((reset - now).total_seconds()))
-            days, remainder = divmod(seconds, 86_400)
-            hours, remainder = divmod(remainder, 3_600)
-            minutes = remainder // 60
-            countdown = f"{days}d {hours}h" if days else (f"{hours}h {minutes}m" if hours else f"{minutes}m")
-            detail = f" · resets in {countdown}"
-            if settings_bool(
-                self.settings.value(
-                    FORECAST_ENABLED_KEY,
-                    DEFAULT_FORECAST_ENABLED,
-                ),
+            detail = (
+                " · "
+                + format_limit_event_time(
+                    "resets",
+                    window.resets_at,
+                    time_mode,
+                    now,
+                )
+            )
+        if settings_bool(
+            self.settings.value(
+                FORECAST_ENABLED_KEY,
                 DEFAULT_FORECAST_ENABLED,
-            ):
-                forecast = limit_forecast(window, now)
-                if forecast is not None:
-                    if forecast.before_reset:
-                        detail += (
-                            " · forecast: full around "
-                            f"{forecast.depletion_at:%H:%M}"
-                        )
-                    else:
-                        detail += " · forecast: not expected before reset"
+            ),
+            DEFAULT_FORECAST_ENABLED,
+        ):
+            forecast = limit_forecast(window, now)
+            if forecast is not None:
+                if forecast.before_reset:
+                    detail += " · forecast: " + format_limit_event_time(
+                        "full",
+                        forecast.depletion_at,
+                        time_mode,
+                        now,
+                        approximate=True,
+                    )
+                else:
+                    detail += " · forecast: safe until reset"
+            else:
+                reason = limit_forecast_unavailable_reason(window, now)
+                if reason is not None:
+                    detail += f" · forecast: {reason}"
         title = QLabel(
             f"{provider} · {window.label} · "
             f"{limit_percent_text(used, display_mode)}{detail}"
@@ -1363,7 +1531,8 @@ class MainWindow(QMainWindow):
         title.setWordWrap(True)
         bar = QProgressBar()
         bar.setRange(0, 100)
-        bar.setValue(round(value))
+        displayed = window.remaining_percent if display_mode == "remaining" else used
+        bar.setValue(round(displayed))
         bar.setTextVisible(False)
         bar.setFixedHeight(10)
         bar.setToolTip(
@@ -1382,18 +1551,32 @@ class MainWindow(QMainWindow):
         layout.addWidget(bar)
         return widget
 
+    def _unavailable_limit_widget(self, provider: str, label: str) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(6, 4, 6, 4)
+        title = QLabel(f"{provider} · {label} · unavailable")
+        title.setWordWrap(True)
+        title.setToolTip(
+            f"{provider} did not report {label} in the latest refresh."
+        )
+        layout.addWidget(title)
+        return widget
+
     def _set_sprite(self, path: Path | None, *, egg: bool = False) -> None:
         if self.reveal_timer.isActive():
             self.reveal_timer.stop()
+        self.frame_stabilizer.reset()
         if self.movie is not None:
             self.movie.stop()
             self.movie = None
         if path is not None and path.exists():
             if path.suffix.lower() == ".gif":
-                movie = QMovie(str(path))
+                movie = QMovie(str(path), parent=self)
                 movie.setScaledSize(QSize(112, 112))
+                self.sprite.setMovie(QMovie())
                 self.sprite.setPixmap(QPixmap())
-                self.sprite.setMovie(movie)
+                movie.frameChanged.connect(self._render_sprite_movie_frame)
                 self.movie = movie
                 movie.start()
                 return
@@ -1406,6 +1589,13 @@ class MainWindow(QMainWindow):
                 return
         self.sprite.setMovie(QMovie())
         self.sprite.setPixmap(_egg_pixmap(112) if egg else _pokeball_pixmap(112))
+
+    def _render_sprite_movie_frame(self, *_args) -> None:
+        if self.movie is None:
+            return
+        pixmap = self.frame_stabilizer.filter(self.movie.currentPixmap())
+        if not pixmap.isNull():
+            self.sprite.setPixmap(pixmap)
 
     def start_companion_reveal(
         self,
@@ -1535,8 +1725,18 @@ class MainWindow(QMainWindow):
                 f"{self.api.localized_name(subject.species_id, self.state.language)}",
                 data,
             )
-        selected_index = self.representative_combo.findData(selected)
-        self.representative_combo.setCurrentIndex(max(0, selected_index))
+        selected_index = 0
+        if selected is not None:
+            for index in range(1, self.representative_combo.count()):
+                if (
+                    self._representative_selection_data(
+                        self.representative_combo.itemData(index)
+                    )
+                    == selected
+                ):
+                    selected_index = index
+                    break
+        self.representative_combo.setCurrentIndex(selected_index)
         self.representative_combo.blockSignals(False)
         self.dex_empty.setVisible(not catches)
         self.catch_empty.setVisible(not catches)
@@ -1800,6 +2000,12 @@ class TrayController(QObject):
                 DEFAULT_LIMIT_DISPLAY_MODE,
             )
         )
+        self.limit_time_mode = normalize_limit_time_mode(
+            self.settings.value(
+                LIMIT_TIME_MODE_KEY,
+                DEFAULT_LIMIT_TIME_MODE,
+            )
+        )
 
         self.window = QmlMainWindow(self.state, self.settings, self.api)
         self.window.refresh_requested.connect(self._refresh_and_reschedule)
@@ -1816,14 +2022,14 @@ class TrayController(QObject):
         self.tray = QSystemTrayIcon(_pokeball_icon(), self)
         self.tray.setToolTip(f"{APP_NAME} · Loading usage and limits…")
         menu = QMenu()
-        open_action = QAction("Open PokeTokenBar", self)
+        open_action = QAction(MENU_OPEN_LABEL, self)
         open_action.triggered.connect(self.show_window)
-        self.pet_visibility_action = QAction("Show desktop pet", self)
+        self.pet_visibility_action = QAction(MENU_PET_VISIBILITY_LABEL, self)
         self.pet_visibility_action.setCheckable(True)
         self.pet_visibility_action.triggered.connect(self._set_pet_visible)
-        refresh_action = QAction("Refresh", self)
+        refresh_action = QAction(MENU_REFRESH_LABEL, self)
         refresh_action.triggered.connect(self.refresh)
-        quit_action = QAction("Quit", self)
+        quit_action = QAction(MENU_QUIT_LABEL, self)
         quit_action.triggered.connect(self.quit)
         menu.addAction(open_action)
         menu.addAction(self.pet_visibility_action)
@@ -1838,9 +2044,12 @@ class TrayController(QObject):
             self.app,
             self.settings,
             self.show_window,
+            on_refresh=self.refresh,
+            on_quit=self.quit,
             warning_percent=self.warning_threshold,
             critical_percent=self.critical_threshold,
             display_mode=self.limit_display_mode,
+            time_mode=self.limit_time_mode,
         )
         self.floating_pet.enabled_changed.connect(self._sync_pet_visibility)
         self.floating_pet.size_changed.connect(
@@ -1939,9 +2148,42 @@ class TrayController(QObject):
                 "The representative could not be changed. Your save was not changed.",
             )
             return
-        self.floating_pet.set_loading()
         self.window.set_state(self.state)
+        self.floating_pet.set_loading()
+        preview = self._representative_preview()
+        if preview is not None:
+            self.last_result = preview
+            self._update_companion_surfaces(preview)
         self.refresh()
+
+    def _representative_preview(self) -> RefreshResult | None:
+        """Resolve a representative immediately; the background refresh may add GIF."""
+        if self.last_result is None:
+            return None
+        subject = representative_subject(self.state)
+        if self.state.representative_species_id is None:
+            pet_sprite = self.last_result.sprite_path
+            pet_name = self.last_result.display_name
+        elif subject.species_id is not None:
+            pet_sprite = self.api.sprite_path(
+                subject.species_id,
+                shiny=subject.is_shiny,
+                animated=False,
+            )
+            pet_name = self.api.localized_name(
+                subject.species_id,
+                self.state.language,
+            )
+        else:
+            pet_sprite = self.api.egg_sprite_path()
+            pet_name = "Pokemon Egg"
+        return replace(
+            self.last_result,
+            state=self.state,
+            pet_sprite_path=pet_sprite,
+            pet_display_name=pet_name,
+            pet_is_egg=subject.is_egg,
+        )
 
     def _update_companion_surfaces(self, result: RefreshResult) -> None:
         self.floating_pet.update(result)
@@ -1960,6 +2202,7 @@ class TrayController(QObject):
             show_cost=self.settings.value("tray_show_cost", False, type=bool),
             show_limit=self.settings.value("tray_show_limit", True, type=bool),
             limit_display_mode=self.limit_display_mode,
+            limit_time_mode=self.limit_time_mode,
         )
         self.tray.setToolTip(tooltip)
 
@@ -1987,6 +2230,12 @@ class TrayController(QObject):
                 DEFAULT_LIMIT_DISPLAY_MODE,
             )
         )
+        self.limit_time_mode = normalize_limit_time_mode(
+            self.settings.value(
+                LIMIT_TIME_MODE_KEY,
+                DEFAULT_LIMIT_TIME_MODE,
+            )
+        )
         self.floating_pet.set_alerts_enabled(
             settings_bool(self.settings.value(PET_ALERTS_KEY, True), True)
         )
@@ -1995,6 +2244,21 @@ class TrayController(QObject):
             self.critical_threshold,
         )
         self.floating_pet.set_limit_display_mode(self.limit_display_mode)
+        self.floating_pet.set_limit_time_mode(self.limit_time_mode)
+        self.floating_pet.set_display_preferences(
+            show_tokens=settings_bool(
+                self.settings.value("tray_show_tokens", True),
+                True,
+            ),
+            show_cost=settings_bool(
+                self.settings.value("tray_show_cost", False),
+                False,
+            ),
+            show_limit=settings_bool(
+                self.settings.value("tray_show_limit", True),
+                True,
+            ),
+        )
         self.settings.sync()
         self._apply_theme()
         if self.last_result is not None:

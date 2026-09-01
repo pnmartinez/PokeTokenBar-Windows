@@ -21,14 +21,18 @@ from poketokenbar_windows.cursor import (
 from poketokenbar_windows.formatting import (
     companion_level_text,
     compact_tokens,
+    format_limit_countdown,
     format_limit_datetime,
+    format_limit_event_time,
     limit_alert_body,
     limit_forecast,
+    limit_forecast_unavailable_reason,
     limit_percent_text,
     limit_reset_summary,
     limit_reset_tray_warning,
     limit_reset_urgency,
     normalize_limit_display_mode,
+    normalize_limit_time_mode,
     provider_limit_rows,
 )
 from poketokenbar_windows.models import (
@@ -565,12 +569,13 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(normalize_limit_display_mode("remaining"), "remaining")
         self.assertEqual(limit_percent_text(75, "used"), "75% used")
         self.assertEqual(limit_percent_text(75, "remaining"), "25% remaining")
+        self.assertEqual(limit_percent_text(75, "remaining", compact=True), "25% left")
         self.assertEqual(
             limit_alert_body("Codex", "Weekly", 95, "remaining"),
-            "Codex Weekly: 5% remaining (95% used).",
+            "Codex Weekly: 95% used.",
         )
 
-    def test_five_hour_forecast_extrapolates_average_window_utilization(self):
+    def test_timed_limit_forecast_extrapolates_average_window_utilization(self):
         now = datetime(2026, 8, 31, 10, 0, tzinfo=timezone.utc)
         fast = LimitWindow(
             "5-hour",
@@ -597,11 +602,50 @@ class FormattingTests(unittest.TestCase):
             duration_minutes=300,
         )
         self.assertIsNone(limit_forecast(unstable, now))
-
-    def test_limit_dates_include_weekday_and_calendar_date(self):
         self.assertEqual(
-            format_limit_datetime(datetime(2026, 8, 26, 3, 37, tzinfo=timezone.utc)),
-            "Wed 26 Aug, 03:37",
+            limit_forecast_unavailable_reason(unstable, now),
+            "not enough data yet",
+        )
+
+        weekly = LimitWindow(
+            "Weekly",
+            60,
+            now + timedelta(days=3),
+            duration_minutes=10_080,
+        )
+        weekly_forecast = limit_forecast(weekly, now)
+        self.assertIsNotNone(weekly_forecast)
+        self.assertTrue(weekly_forecast.before_reset)
+
+    def test_limit_time_modes_use_countdowns_or_short_dates_consistently(self):
+        now = datetime(2026, 8, 26, 0, 0, tzinfo=timezone.utc)
+        reset = datetime(2026, 8, 26, 3, 37, tzinfo=timezone.utc)
+        forecast = now + timedelta(hours=1, minutes=40)
+
+        self.assertEqual(normalize_limit_time_mode(None), "remaining")
+        self.assertEqual(normalize_limit_time_mode("datetime"), "datetime")
+        self.assertEqual(format_limit_countdown(reset, now), "3h 37m")
+        self.assertEqual(
+            format_limit_event_time("resets", reset, "remaining", now),
+            "resets in 3h 37m",
+        )
+        self.assertEqual(
+            format_limit_event_time(
+                "full",
+                forecast,
+                "remaining",
+                now,
+                approximate=True,
+            ),
+            "full in ~2h",
+        )
+        self.assertEqual(
+            format_limit_datetime(reset),
+            "26 Aug, 03:37",
+        )
+        self.assertEqual(
+            format_limit_event_time("resets", reset, "datetime", now),
+            "resets 26 Aug, 03:37",
         )
 
     def test_limit_reset_summary_is_optional_and_compact(self):
@@ -617,9 +661,14 @@ class FormattingTests(unittest.TestCase):
                 )
             ],
         )
+        now = datetime(2026, 9, 1, 0, 0, tzinfo=timezone.utc)
         self.assertEqual(
-            limit_reset_summary(limits),
-            "Full reset available · Weekly + 5h · expires Mon 21 Sep, 01:05",
+            limit_reset_summary(limits, now),
+            "Full reset available · Weekly + 5h · expires in 20d 1h",
+        )
+        self.assertEqual(
+            limit_reset_summary(limits, now, time_mode="datetime"),
+            "Full reset available · Weekly + 5h · expires 21 Sep, 01:05",
         )
 
     def test_reset_row_stays_last_in_provider_block(self):
@@ -658,7 +707,11 @@ class FormattingTests(unittest.TestCase):
             reset_credits=[RateLimitResetCredit(expires_at=now + timedelta(days=6))],
         )
         self.assertEqual(limit_reset_urgency(limits, now), "warning")
-        self.assertEqual(limit_reset_tray_warning(limits, now), "🟠 reset expires Tue 01 Sep, 08:00")
+        self.assertEqual(limit_reset_tray_warning(limits, now), "🟠 reset expires in 6d 0h")
+        self.assertEqual(
+            limit_reset_tray_warning(limits, now, time_mode="datetime"),
+            "🟠 reset expires 01 Sep, 08:00",
+        )
 
     def test_reset_is_amber_before_weekly_even_over_one_week_away(self):
         now = datetime(2026, 8, 26, 8, 0, tzinfo=timezone.utc)
@@ -679,7 +732,11 @@ class FormattingTests(unittest.TestCase):
             reset_credits=[RateLimitResetCredit(expires_at=now + timedelta(hours=72))],
         )
         self.assertEqual(limit_reset_urgency(limits, now), "critical")
-        self.assertEqual(limit_reset_tray_warning(limits, now), "🔴 reset expires Sat 29 Aug, 08:00")
+        self.assertEqual(limit_reset_tray_warning(limits, now), "🔴 reset expires in 3d 0h")
+        self.assertEqual(
+            limit_reset_tray_warning(limits, now, time_mode="datetime"),
+            "🔴 reset expires 29 Aug, 08:00",
+        )
 
     def test_reset_stays_neutral_after_weekly_and_one_week(self):
         now = datetime(2026, 8, 26, 8, 0, tzinfo=timezone.utc)

@@ -89,6 +89,7 @@ class ProviderLimits:
     provider: str
     plan: str | None = None
     windows: list[LimitWindow] = field(default_factory=list)
+    reserve_active: bool = False
     reset_credits_available: int = 0
     reset_credits: list[RateLimitResetCredit] = field(default_factory=list)
     error: str | None = None
