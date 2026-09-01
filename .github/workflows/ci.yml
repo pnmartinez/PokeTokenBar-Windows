@@ -7,6 +7,10 @@ on:
 jobs:
   test:
     runs-on: windows-latest
+    env:
+      # Qt otherwise selects the native Windows platform plugin, which makes
+      # widget tests depend on an interactive desktop being available.
+      QT_QPA_PLATFORM: offscreen
     strategy:
       matrix:
         python-version: ["3.10", "3.12"]
