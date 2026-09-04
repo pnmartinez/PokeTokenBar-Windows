@@ -1,197 +1,177 @@
-# Folla de ruta de UI/UX
+# Roadmap de UI/UX y paridad con upstream
 
-Esta folla de ruta prioriza as melloras que fan PokeTokenBar para Windows máis agradable, sinxelo, atractivo e funcional. Non pretende reproducir toda a infraestrutura interna do proxecto orixinal para macOS.
+Este documento prioriza las mejoras que hacen PokeTokenBar para Windows más agradable, sencillo, bonito y funcional. No persigue copiar indiscriminadamente proveedores, arneses internos ni componentes exclusivos de macOS.
 
-## Obxectivos principais e continuos
+## Referencia de la auditoría
 
-### Modernizar a interface
+- Windows: `3ae423c` (`master`, migración de la ventana principal a Qt Quick/QML).
+- Upstream fijado anteriormente: `37763d3c367068492c18f6e51b45977c2d27f6d5` (después de `v2.5.3`).
+- Upstream revisado ahora: `5f1ef524a104dceee681a21c13a92a7404c6f176`, 2026-09-03.
+- Fuente: [chattymin/PokeTokenBar](https://github.com/chattymin/PokeTokenBar).
 
-Evolucionar a capa visual para conseguir unha interface máis moderna, coidada e próxima á experiencia do proxecto upstream. Antes dunha migración ampla, avaliarase mediante prototipos se convén modernizar a implementación actual con Qt Widgets/PySide6, pasar a Qt Quick/QML ou empregar outra alternativa compatible con Windows.
+La comparación se ha hecho contra el código que realmente se ejecuta. La aplicación actual instancia `QmlMainWindow`; por tanto, una función presente únicamente en la ventana Qt Widgets antigua o en el backend se considera **parcial**, no terminada.
 
-Calquera opción deberá conservar a integración coa bandexa do sistema, a mascota flotante, o empaquetado como aplicación independente, a accesibilidade e o comportamento correcto con distintos escalados DPI, temas e configuracións de monitores.
+Estados usados:
 
-### Incorporar melloras do upstream
+- **Hecho**: está disponible y utilizable en la interfaz QML actual.
+- **Parcial**: existe en el backend, en Widgets o de forma incompleta, pero falta exposición o pulido en QML.
+- **Pendiente**: no existe en la versión Windows actual.
+- **Diferencia intencionada**: Windows resuelve la necesidad de otra forma o se ha descartado por poco valor visible.
 
-Revisar periodicamente o repositorio upstream e incorporar funcionalidades e melloras que aínda non estean presentes nesta versión, priorizando as máis útiles para as persoas usuarias de Windows e as que ofrezan unha boa relación entre valor, facilidade de adaptación e risco.
+## Inventario funcional visible del proyecto original
 
-Cada revisión debe quedar reflectida en `UPSTREAM.md`, indicando o commit comparado, as decisións de paridade e as diferenzas intencionadas.
+### Barra de menú y mascota flotante
 
-## Criterios de alcance
+- Compañero animado en la barra de menú con campos configurables de tokens, coste y límite.
+- Mascota flotante redimensionable entre 48 y 192 px, arrastrable y con posición persistente.
+- Consumo al pasar el cursor, apertura con clic y menú contextual con clic derecho.
+- Burbujas de alertas de límites y eventos.
+- Selector de calidad de animación: ahorro, equilibrado y fluido.
 
-Priorízanse os cambios cun efecto visible na experiencia de uso:
+### Inicio y consumo
 
-- Claridade da información.
-- Facilidade de navegación.
-- Calidade visual e consistencia.
-- Resposta inmediata ás accións.
-- Personalización útil.
-- Mellor integración co escritorio de Windows.
+- Compañero actual, rareza, naturaleza, estado Shiny y progreso hasta eclosión, evolución o graduación.
+- Tokens de hoy, semana y mes, coste estimado y previsión de agotamiento.
+- Resumen combinado y pestañas por proveedor.
+- Desglose por tipo de token: entrada, salida, escritura de caché y lectura de caché.
+- Desglose por modelo.
+- Estados vacíos, carga, datos obsoletos y errores sin mostrar detalles técnicos innecesarios.
 
-Quedan fóra, salvo que resolvan un problema visible en Windows:
+### Límites oficiales y estado de servicios
 
-- Informes avanzados de fallos.
-- Rotación e migración histórica de rexistros.
-- Keychain e mecanismos exclusivos de macOS.
-- Homebrew, LaunchAgent e outros compoñentes de distribución de macOS.
-- Infraestrutura interna sen impacto directo na experiencia.
-- Paridade completa e indiscriminada con todos os provedores do upstream.
+- Límites de Claude, Codex y Antigravity con porcentaje, reinicio y estado de autenticación.
+- Modo usado/restante y formato tiempo restante/fecha y hora.
+- Cuenta, organización o plan cuando están disponibles.
+- Actualización manual de límites y avisos cuando la sesión ha caducado.
+- Luna Reserve y límites individuales de modelos de Antigravity.
+- Límites personales de gasto.
+- Banners de incidencias del proveedor con severidad y detalle.
 
-## Prioridade alta: experiencia principal
+### Juego y colección
 
-### Mascota flotante do escritorio
+- Ciclo huevo → eclosión → evoluciones reales → graduación para generaciones I–V.
+- Rareza, naturaleza, Shiny, Shiny Charm y recompensas Rare Candy al completar límites.
+- Pokédex consolidada y registro individual de capturas como vistas separadas.
+- Colección paginada, contadores/filtros compactos y variante normal/Shiny.
+- Línea evolutiva con formas obtenidas, actual y futuras ocultas.
+- Pokémon representante independiente del compañero en crianza.
+- Celebraciones de eclosión, evolución, graduación y Shiny.
 
-- [x] Mostrar o compañeiro fóra da bandexa do sistema.
-- [x] Permitir arrastralo e lembrar a súa posición.
-- [x] Permitir configurar o seu tamaño.
-- [x] Abrir a xanela principal ao facer clic.
-- [x] Mostrar o consumo ao pasar o cursor.
-- [x] Superpoñer ao pasar o cursor a porcentaxe ata a eclosión, evolución ou graduación.
-- [x] Ofrecer un menú contextual sinxelo.
-- [x] Permitir volver mostralo directamente desde o menú contextual da bandexa.
-- [x] Mostrar alertas de límites mediante bocadillos.
-- [x] Mantelo dentro dunha pantalla válida ao cambiar monitores ou resolución.
+### Bolsa y tienda
 
-### Sprites e animacións
+- Rare Candy, Mint y Shiny Charm con cantidades, efectos y estados de disponibilidad.
+- Huevos Normal, Uncommon y Rare.
+- Tarjetas que permanecen visibles aunque la acción esté bloqueada y explican el motivo.
+- Confirmaciones integradas en la propia vista y advertencia reforzada al sustituir un Shiny.
+- Retorno a Inicio tras comprar un huevo para mostrar el nuevo estado.
 
-- [x] Animar o Pokémon actual con sprites da quinta xeración.
-- [x] Animar o ovo mentres agarda a eclosión.
-- [x] Manter unha alternativa estática cando non exista animación.
-- [x] Usar escalado exacto por píxel, sen suavizado borroso.
-- [x] Precargar os sprites para evitar saltos ou imaxes tardías.
-- [x] Reducir ou deter as animacións cando non sexan visibles.
+### Ajustes, mantenimiento y soporte
 
-### Pantalla Home
+- Idioma completo de la interfaz en coreano, inglés, japonés, español, francés, portugués y alemán.
+- Intervalo y actualización manual, inicio con el sistema y campos visibles en la barra.
+- Tamaño/visibilidad de la mascota, calidad de animación y notificaciones configurables.
+- Umbrales de avisos de límites y comprobación de estado de servicios.
+- Carpetas de escaneo adicionales por proveedor, con comodines y recuento de coincidencias.
+- Clave de sesión opcional de Claude, validación y selección de cuenta/organización.
+- Importación y exportación de la partida.
+- Comprobación y aplicación de actualizaciones dentro de la app.
+- Acceso al registro y flujo para informar de un problema.
 
-- [x] Dar protagonismo visual ao Pokémon actual.
-- [x] Mostrar claramente o progreso do ovo ou estadio actual.
-- [x] Mostrar a evolución actual e a seguinte.
-- [x] Mostrar rareza, natureza e condición Shiny.
-- [x] Crear un resumo compacto de consumo e límites.
-- [x] Evitar grandes zonas baleiras.
-- [x] Adaptar correctamente nomes e cifras longas.
-- [x] Axustar dinamicamente a altura dos provedores para priorizar os límites oficiais.
-- [x] Manter a porcentaxe de progreso lexible fóra do recheo da barra.
+### Proveedores visibles en upstream
 
-### Celebracións e resposta ás accións
+Claude, Codex, Gemini, Antigravity, OpenCode, Hermes, Cursor, Grok, GitHub Copilot, Kiro, Pi y omp. Esta lista sirve para detectar huecos, pero la paridad completa de proveedores no es una prioridad por sí misma.
 
-- [x] Engadir unha celebración de eclosión.
-- [x] Engadir unha celebración de evolución.
-- [x] Engadir unha celebración de graduación.
-- [x] Engadir unha celebración especial para Shiny.
-- [x] Mostrar unha resposta inmediata ao usar Rare Candy.
-- [x] Mostrar a nova natureza ao usar Mint.
-- [x] Manter as animacións breves e non intrusivas.
+## Comparación con la interfaz Windows actual
 
-### Pokémon representante
+| Área | Estado | Situación real en QML |
+| --- | --- | --- |
+| Ventana moderna y navegación | **Hecho** | QML responsive con Inicio, Colección, Bolsa, Tienda y Ajustes; tema claro, oscuro o del sistema. |
+| Bandeja del sistema | **Parcial / diferencia intencionada** | Muestra el representante como icono y el resumen en el tooltip; Windows no replica el texto y la animación incrustados en la barra de menús de macOS. QML permite ocultar tokens y coste, pero no el límite. |
+| Mascota flotante | **Parcial** | Arrastre, posición persistente, clic, menú contextual, alertas y permanencia en pantallas válidas funcionan. El hover incluye el porcentaje hasta la siguiente evolución. QML solo permite 64–192 px aunque el backend admite 48–192 px. |
+| Calidad de animación | **Pendiente** | Las animaciones existen, pero no hay perfiles de ahorro/equilibrado/fluido. |
+| Juego y celebraciones | **Hecho** | Huevo, evoluciones, graduación, rareza, naturaleza, Shiny, recompensas y avisos breves funcionan. |
+| Inicio: compañero y resumen | **Hecho** | Compañero, progreso, cuatro métricas, límites y lista de proveedores tienen tratamiento visual QML. |
+| Detalle de consumo | **Parcial** | QML muestra hoy y semana por proveedor. No ofrece pestañas, mes/coste en el detalle, tipos de token ni desglose por modelo. |
+| Límites oficiales | **Parcial** | Claude y Codex, barras, reinicios y usado/restante funcionan. El backend calcula previsiones y Luna Reserve, pero QML no muestra la previsión, no muestra plan/cuenta aunque recibe `plan`, no ofrece refresco manual ni estados de autenticación claros y limita la vista a tres filas. |
+| Estados del servicio | **Pendiente** | No hay banners de incidencias del proveedor. |
+| Pokédex y capturas | **Parcial** | QML muestra una cuadrícula y el historial seguido en la misma página. La paginación, vistas separadas, filtros/contadores, alternancia normal/Shiny y línea evolutiva solo existen en Widgets o faltan. |
+| Pokémon representante | **Hecho** | Se puede elegir una captura o volver a seguir al compañero activo; se refleja en bandeja y mascota. |
+| Bolsa y tienda | **Parcial** | Las operaciones y tarjetas funcionan. Las confirmaciones siguen usando diálogos Widgets; faltan motivos visibles en botones desactivados y el flujo QML no replica toda la respuesta contextual de upstream. |
+| Ajustes generales | **Hecho** | Intervalo, nombres Pokémon, inicio con Windows, mascota, avisos, usado/restante, previsión, notificaciones, tema e importar/exportar. |
+| Ajustes avanzados ya soportados por backend | **Parcial** | QML no expone el límite en bandeja, umbrales warning/critical ni tiempo restante/fecha y hora. Su slider empieza en 64 px aunque el backend admite 48 px. |
+| Idiomas | **Parcial** | Solo se traducen nombres Pokémon. La interfaz QML está escrita en español y no usa un catálogo de traducciones. |
+| Carpetas de escaneo adicionales | **Pendiente** | No hay editor por proveedor ni vista previa de coincidencias. |
+| Cuenta/sesión de Claude | **Pendiente** | No hay configuración visible de clave de sesión ni selector de organización. |
+| Actualizador dentro de la app | **Pendiente** | No hay aviso, descarga ni aplicación de una versión nueva. |
+| Importar/exportar partida | **Hecho** | Usa selectores nativos y crea respaldo antes de importar. |
+| Ayuda y diagnóstico | **Pendiente** | No hay acceso directo al log ni flujo para informar de un problema. |
+| Cobertura de proveedores | **Diferencia intencionada** | Windows cubre 9 proveedores locales y límites de Claude/Codex. Antigravity, Pi y omp quedan supeditados a demanda real. |
 
-- [x] Permitir escoller como representante calquera especie posuída.
-- [x] Mostrar o representante na bandexa e na mascota flotante.
-- [x] Manter a súa selección independente do compañeiro que se está criando.
-- [x] Permitir volver ao modo «seguir o compañeiro actual».
+## TODO priorizado
 
-## Colección e progresión
+### P0 — recuperar funciones visibles perdidas al activar QML
 
-### Pokédex
+- [ ] Exponer en Ajustes QML `Mostrar límite en la bandeja`.
+- [ ] Exponer y validar los umbrales de advertencia y crítico ya existentes en el backend.
+- [ ] Exponer el selector compartido `Tiempo restante / Fecha y hora` y aplicarlo a Inicio, bandeja y mascota.
+- [ ] Corregir el slider de mascota para cubrir el rango real 48–192 px.
+- [ ] Sustituir el `ComboBox` usado/restante por un control segmentado claro y compacto.
+- [ ] Separar Pokédex y registro de capturas dentro de Colección.
+- [ ] Recuperar paginación, contadores/filtros, alternancia normal/Shiny y línea evolutiva en QML.
+- [ ] Añadir foco visible, orden de tabulación y nombres accesibles a los controles QML; verificar teclado completo.
+- [ ] Corregir `README.md` para no presentar como accesibles en QML funciones que solo conserva la vista Widgets antigua.
 
-- [x] Presentar as especies nunha grade ordenada por número.
-- [x] Engadir paxinación ou navegación compacta.
-- [x] Diferenciar visualmente especies normais e Shiny.
-- [x] Permitir alternar o sprite normal/Shiny dunha especie posuída.
-- [x] Mostrar contadores totais e por rareza.
-- [x] Deseñar coidadosamente os estados baleiros.
+### P1 — mejoras de UI/UX con mayor impacto
 
-### Rexistro de capturas
+- [ ] Mostrar el motivo exacto bajo cada acción desactivada de Bolsa/Tienda, incluidos saldo insuficiente, objeto ya activo y compra de huevo bloqueada durante la fase huevo.
+- [ ] Reemplazar confirmaciones modales de compra/uso por confirmaciones inline; mantener una advertencia reforzada para descartar un Shiny.
+- [ ] Navegar a Inicio después de comprar un huevo y mostrar allí la transición del nuevo compañero.
+- [ ] Añadir detalle por proveedor sin sobrecargar Inicio: hoy/semana/mes/coste, tipos de token y modelos.
+- [ ] Mostrar en límites el plan/cuenta disponible, todos los buckets relevantes, estado obsoleto/autenticación caducada y una acción de refresco manual.
+- [ ] Diferenciar visualmente `cargando`, `actualizado`, `con advertencias`, `obsoleto` y `error`; conservar los últimos datos válidos.
+- [ ] Añadir selector de calidad de animación con ahorro, equilibrado y fluido, incluyendo respeto a movimiento reducido.
+- [ ] Traducir toda la interfaz mediante un catálogo único; conservar español e inglés como mínimo antes de añadir los demás idiomas upstream.
+- [ ] Incorporar aviso y actualización dentro de la app con opción `Más tarde` y recuperación segura ante fallo.
 
-- [x] Separar o rexistro individual da Pokédex consolidada.
-- [x] Ordenar as capturas da máis recente á máis antiga.
-- [x] Mostrar liña evolutiva, rareza, natureza e data.
-- [x] Identificar claramente as capturas Shiny.
+### P2 — funcionalidad útil, pero no esencial para el pulido inmediato
 
-### Liña evolutiva visual
+- [ ] Añadir carpetas de escaneo extra por proveedor con validación, comodines y contador de archivos coincidentes.
+- [ ] Añadir configuración opcional de sesión de Claude y selección de cuenta/organización, solo si mejora casos reales de límites ausentes.
+- [ ] Mostrar banners compactos de incidencias cuando aporten una explicación accionable.
+- [ ] Añadir acceso a la carpeta de logs y un informe de problema que oculte secretos y datos personales.
+- [ ] Evaluar límites personales de gasto si hay demanda en Windows.
 
-- [x] Diferenciar formas obtidas, actual e futuras.
-- [x] Representar ramas evolutivas sen saturar a pantalla.
-- [x] Mostrar estados descoñecidos cun tratamento visual coherente.
+### P3 — aplazado conscientemente
 
-## Navegación e claridade
+- [ ] Evaluar Antigravity únicamente con muestras reales de Windows y una ruta de datos estable.
+- [ ] Añadir Pi u omp solo cuando exista uso verificable entre usuarios de esta versión.
+- [ ] Profundizar en la reconciliación de forks de Codex solo si aparecen diferencias medibles.
 
-- [x] Manter cinco áreas principais: Home, Collection, Bag, Shop e Settings.
-- [x] Usar pestanas por provedor só cando haxa varios detectados.
-- [x] Manter o resumo combinado facilmente accesible.
-- [x] Engadir estados baleiros claros en colección, mochila e provedores.
-- [x] Diferenciar visualmente «actualizando», «actualizado», «obsoleto» e «erro».
-- [x] Evitar mostrar excepcións ou mensaxes técnicas en bruto á persoa usuaria.
-- [x] Facer predicible o peche e a reapertura desde a bandexa.
-- [x] Engadir textos de axuda ás accións pouco evidentes.
+No se trasladarán Keychain, Homebrew, LaunchAgent, detalles internos de AppKit ni automatismos sin impacto visible en Windows.
 
-## Bandexa do sistema
+## Diferencias de diseño que se conservan
 
-- [x] Ofrecer un modo só personaxe.
-- [x] Permitir mostrar ou ocultar os tokens de hoxe.
-- [x] Permitir mostrar ou ocultar o custo.
-- [x] Permitir mostrar ou ocultar a porcentaxe do límite.
-- [x] Manter un texto de axuda compacto co estado esencial.
-- [x] Garantir boa lexibilidade con escalado DPI e temas claro/escuro.
+- La ventana principal de Windows seguirá siendo más amplia que el popover compacto de macOS; permite una jerarquía visual y navegación lateral mejores.
+- Los campos de bandeja también gobiernan el contenido compacto del hover de la mascota para evitar preferencias contradictorias.
+- La barra de progreso de Inicio sigue el modo usado/restante elegido; colores, alertas y recompensas siempre se calculan con utilización real.
+- La previsión se aplica a ventanas oficiales con duración conocida, no solo al bloque de cinco horas de Claude.
+- La integración con escritorios virtuales se limita deliberadamente al escritorio virtual actual de Windows.
 
-## Límites e consumo
+## Criterio de terminado
 
-- [x] Mostrar os límites mediante barras de progreso claras.
-- [x] Mostrar a conta atrás ata o reinicio cando estea dispoñible.
-- [x] Permitir alternar entre porcentaxe usada e restante.
-- [x] Aplicar cores coherentes para estados normal, de advertencia e crítico.
-- [x] Permitir configurar os limiares de advertencia e crítico.
-- [x] Evitar notificacións repetidas mentres se manteña o mesmo estado.
-- [x] Engadir unha previsión sinxela de esgotamento antes do reinicio.
-- [x] Sinalar datos obsoletos sen confundilos cun fallo da aplicación.
-- [x] Mostrar Luna Reserve debaixo dos límites principais de Codex e antes dos créditos de reinicio.
-- [x] Evitar Rare Candy duplicados cando a marca temporal do reinicio varíe uns segundos.
+Una casilla solo pasa a completada cuando:
 
-## Tenda e mochila
+1. La función está accesible en la ventana QML que se ejecuta, no únicamente en Widgets o en Python.
+2. Tiene estados normal, carga, vacío, desactivado y error cuando correspondan.
+3. Funciona con teclado, foco visible, temas claro/oscuro y escalado DPI habitual.
+4. Cuenta con pruebas del modelo o controlador y una comprobación visual de la vista afectada.
+5. No rompe bandeja, mascota flotante, persistencia de la partida ni actualización en segundo plano.
 
-- [x] Deseñar tarxetas visuais para obxectos e ovos.
-- [x] Mostrar icona, nome, efecto e prezo de forma inmediata.
-- [x] Mostrar o saldo dispoñible de maneira consistente.
-- [x] Desactivar as accións non dispoñibles explicando o motivo.
-- [x] Solicitar confirmación contextual antes de mercar ou usar obxectos.
-- [x] Advertir ao substituír un Pokémon activo.
-- [x] Mostrar unha advertencia especial antes de descartar un Shiny.
-- [x] Diferenciar visualmente ovos Normal, Uncommon e Rare.
-- [x] Mostrar unha resposta visual despois de cada compra ou uso.
+## Cambios upstream posteriores al punto fijado
 
-## Axustes
+Entre `37763d3` y `5f1ef52`, upstream añadió cuatro cambios. Dos afectan a experiencia visible y se incorporan al TODO:
 
-- [x] Agrupar as opcións en seccións fáciles de percorrer.
-- [x] Manter as opcións técnicas dentro dunha sección avanzada pregable.
-- [x] Permitir configurar o idioma dos nomes dos Pokémon.
-- [x] Permitir configurar o intervalo de actualización.
-- [x] Permitir configurar o inicio automático.
-- [x] Permitir escoller os elementos visibles na bandexa.
-- [x] Permitir configurar a mascota flotante e o seu tamaño.
-- [x] Permitir activar por separado as notificacións de límites e eventos.
-- [x] Permitir escoller entre porcentaxe usada ou restante.
-- [x] Engadir unha adaptación consistente aos temas claro e escuro.
-- [x] Engadir importación e exportación da partida mediante selectores de ficheiro.
+- Los huevos permanecen visibles durante la fase huevo, con el botón desactivado y una explicación.
+- Codex localizado dentro de ChatGPT.app vuelve a proporcionar límites; el cambio concreto es de macOS y no se porta literalmente, pero recuerda que en Windows la ausencia de un binario debe explicarse sin ocultar el consumo local.
 
-## Pulido transversal
-
-- [x] Definir unha xerarquía tipográfica consistente.
-- [x] Unificar iconas, marxes, radios e espazado.
-- [x] Mellorar o comportamento con escalado DPI.
-- [x] Evitar pestanexos e cambios bruscos durante as actualizacións.
-- [x] Deseñar estados de carga, erro e desconexión.
-- [x] Asegurar a navegación por teclado e un foco visible.
-- [x] Revisar contraste e lexibilidade.
-- [x] Manter a interface compacta sen sacrificar claridade.
-
-## Rexistro de entregas
-
-- [x] Migrar a xanela principal a unha interface funcional Qt Quick/QML, conservando a bandexa, a mascota flotante, o estado local e as accións do xogo.
-- [x] Auditar a implementación inicial e marcar unicamente requisitos verificables.
-- [x] Engadir a mascota flotante configurable, persistente e adaptada aos cambios de pantalla.
-- [x] Separar Bag e Shop e engadir confirmacións, motivos de bloqueo e resposta inmediata.
-- [x] Personalizar o contido do texto de axuda da bandexa e usar o personaxe como icona.
-- [x] Permitir escoller un representante da colección sen cambiar o compañeiro activo.
-- [x] Substituír os límites en texto simple por barras con modo usado/restante e cores de urxencia.
-- [x] Completar Home, celebracións, Pokédex paxinada e navegación por provedor.
-- [x] Engadir temas, idioma dos nomes dos Pokémon, limiares, estados de actualización e importación/exportación segura.
-- [x] Executar controis automáticos, visuais e de accesibilidade sobre a implementación da folla de ruta.
+Los otros dos cambios son optimización del sprite de la barra de menú y corrección de comentarios internos; no crean una función nueva para la interfaz Windows.
