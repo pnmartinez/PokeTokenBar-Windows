@@ -12,6 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, QSettings, Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QProgressBar, QScrollArea
 
 from poketokenbar_windows.models import (
@@ -26,6 +27,7 @@ from poketokenbar_windows.floating_pet import (
     FloatingPetWindow,
     HoverCallout,
 )
+from poketokenbar_windows.qml_ui import QmlMainWindow, QmlViewModel
 from poketokenbar_windows.state import CatchRecord, GameState, MonState
 from poketokenbar_windows.ui import (
     DesktopPet,
@@ -43,6 +45,9 @@ class FakeUIAPI:
         return {1: "Bulbasaur", 2: "Ivysaur", 3: "Venusaur"}.get(species_id, f"Species {species_id}")
 
     def sprite_path(self, species_id: int, shiny: bool = False, animated: bool = True):
+        return None
+
+    def egg_sprite_path(self):
         return None
 
 
@@ -69,6 +74,38 @@ class UITests(unittest.TestCase):
             ["Home", "Collection", "Bag", "Shop", "Settings"],
         )
         self.assertIsInstance(window.tabs.widget(4), QScrollArea)
+
+    def test_qml_window_loads_and_exposes_the_modern_shell(self):
+        window = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.app.processEvents()
+
+        self.assertEqual(window.quick.status(), QQuickWidget.Status.Ready)
+        self.assertIsNotNone(window.quick.rootObject())
+        self.assertGreaterEqual(window.minimumWidth(), 820)
+
+    def test_qml_view_model_renders_usage_limits_and_companion_progress(self):
+        state = GameState(egg_usage=EGG_HATCH_THRESHOLD // 2)
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+        reset = datetime.now(timezone.utc) + timedelta(hours=2)
+        result = RefreshResult(
+            UsageSnapshot(
+                providers={"codex": ProviderUsage("codex", today_tokens=1_500_000)},
+                scanned_at=datetime.now(timezone.utc),
+            ),
+            {"codex": ProviderLimits("codex", windows=[LimitWindow("5-hour", 75, reset)])},
+            {},
+            state,
+            [],
+            None,
+            "Pokemon Egg",
+        )
+
+        model.render(result)
+
+        self.assertEqual(model.todayTokens, "1.5M")
+        self.assertEqual(model.companionProgress, 50)
+        self.assertEqual(model.providers[0]["name"], "Codex")
+        self.assertEqual(model.limits[0]["percentText"], "75% used")
 
     def test_legacy_desktop_pet_preferences_migrate_without_overwriting_current_values(self):
         self.settings.setValue("pet_visible", True)

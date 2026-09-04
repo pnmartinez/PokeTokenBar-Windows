@@ -43,6 +43,7 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $root "dist
     --onedir `
     --name "PokeTokenBar-Windows" `
     --paths (Join-Path $root "src") `
+    --add-data "$(Join-Path $root 'src\poketokenbar_windows\qml');poketokenbar_windows\qml" `
     --collect-all PySide6 `
     (Join-Path $root "scripts\pyinstaller_entry.py")
 if ($LASTEXITCODE -ne 0) {
