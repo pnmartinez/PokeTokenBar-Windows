@@ -14,11 +14,14 @@ from .formatting import (
     DEFAULT_LIMIT_DISPLAY_MODE,
     FORECAST_ENABLED_KEY,
     LIMIT_DISPLAY_MODE_KEY,
+    LIMIT_TIME_MODE_KEY,
+    DEFAULT_LIMIT_TIME_MODE,
     compact_tokens,
-    format_limit_datetime,
+    format_limit_event_time,
     limit_display_percent,
     limit_percent_text,
     normalize_limit_display_mode,
+    normalize_limit_time_mode,
     ordered_limit_windows,
 )
 from .notifications import (
@@ -30,6 +33,8 @@ from .notifications import (
     DEFAULT_WARNING_THRESHOLD,
     LIMIT_NOTIFICATIONS_KEY,
     WARNING_THRESHOLD_KEY,
+    normalize_critical_threshold,
+    normalize_warning_threshold,
 )
 from .pet_logic import PET_DEFAULT_SIZE, normalize_pet_size, settings_bool
 from .pokemon import (
@@ -92,6 +97,9 @@ class QmlViewModel(QObject):
         self.state = state
         self.settings = settings
         self.api = api
+        self._dex_page = 0
+        self._dex_filter = "all"
+        self._dex_shiny_by_species: dict[int, bool] = {}
         self._values: dict[str, Any] = {
             "loading": True,
             "refreshEnabled": False,
@@ -112,6 +120,12 @@ class QmlViewModel(QObject):
             "providers": [],
             "limits": [],
             "collection": [],
+            "dexEntries": [],
+            "dexFilters": [],
+            "dexSummary": "0 especies",
+            "dexPage": 1,
+            "dexPageCount": 1,
+            "dexFilter": "all",
             "catches": [],
             "shopItems": [],
             "rareCandyCount": 0,
@@ -128,6 +142,9 @@ class QmlViewModel(QObject):
             "trayShowLimit": settings.value("tray_show_limit", True, type=bool),
             "limitDisplayMode": normalize_limit_display_mode(
                 settings.value(LIMIT_DISPLAY_MODE_KEY, DEFAULT_LIMIT_DISPLAY_MODE)
+            ),
+            "limitTimeMode": normalize_limit_time_mode(
+                settings.value(LIMIT_TIME_MODE_KEY, DEFAULT_LIMIT_TIME_MODE)
             ),
             "forecastEnabled": settings_bool(
                 settings.value(FORECAST_ENABLED_KEY, DEFAULT_FORECAST_ENABLED),
@@ -210,6 +227,22 @@ class QmlViewModel(QObject):
     collection = Property(
         "QVariantList", lambda self: self._values["collection"], notify=dataChanged
     )
+    dexEntries = Property(
+        "QVariantList", lambda self: self._values["dexEntries"], notify=dataChanged
+    )
+    dexFilters = Property(
+        "QVariantList", lambda self: self._values["dexFilters"], notify=dataChanged
+    )
+    dexSummary = Property(
+        str, lambda self: self._values["dexSummary"], notify=dataChanged
+    )
+    dexPage = Property(int, lambda self: self._values["dexPage"], notify=dataChanged)
+    dexPageCount = Property(
+        int, lambda self: self._values["dexPageCount"], notify=dataChanged
+    )
+    dexFilter = Property(
+        str, lambda self: self._values["dexFilter"], notify=dataChanged
+    )
     catches = Property(
         "QVariantList", lambda self: self._values["catches"], notify=dataChanged
     )
@@ -246,6 +279,9 @@ class QmlViewModel(QObject):
     )
     limitDisplayMode = Property(
         str, lambda self: self._values["limitDisplayMode"], notify=dataChanged
+    )
+    limitTimeMode = Property(
+        str, lambda self: self._values["limitTimeMode"], notify=dataChanged
     )
     forecastEnabled = Property(
         bool, lambda self: self._values["forecastEnabled"], notify=dataChanged
@@ -320,6 +356,7 @@ class QmlViewModel(QObject):
             language=state.language,
         )
         self._values["collection"] = self._collection_rows()
+        self._refresh_dex_rows()
         self._values["catches"] = self._catch_rows()
         self._values["shopItems"] = self._shop_rows()
 
@@ -355,23 +392,145 @@ class QmlViewModel(QObject):
             )
         return rows
 
+    def _is_current_catch(self, catch: Any) -> bool:
+        mon = self.state.mon
+        return bool(
+            mon
+            and catch.base_id == mon.base_id
+            and catch.path_ids == mon.path_ids
+            and catch.nature == mon.nature
+            and catch.is_shiny == mon.is_shiny
+        )
+
+    def _all_dex_rows(self) -> list[dict[str, Any]]:
+        species: dict[int, dict[str, Any]] = {}
+        for catch in self.state.catches:
+            path_ids = catch.path_ids or [catch.species_id]
+            obtained_count = len(path_ids)
+            if self._is_current_catch(catch) and self.state.mon is not None:
+                obtained_count = min(len(path_ids), self.state.mon.stage_index + 1)
+            for species_id in path_ids[:obtained_count]:
+                row = species.setdefault(
+                    int(species_id),
+                    {
+                        "speciesId": int(species_id),
+                        "rarity": catch.rarity,
+                        "hasShiny": False,
+                    },
+                )
+                row["hasShiny"] = bool(row["hasShiny"] or catch.is_shiny)
+
+        rows: list[dict[str, Any]] = []
+        for species_id, row in sorted(species.items()):
+            has_shiny = bool(row["hasShiny"])
+            show_shiny = self._dex_shiny_by_species.get(species_id, has_shiny)
+            if not has_shiny:
+                show_shiny = False
+            rows.append(
+                {
+                    **row,
+                    "name": self.api.localized_name(species_id, self.state.language),
+                    "number": f"#{species_id:03d}",
+                    "showShiny": show_shiny,
+                    "sprite": _file_url(
+                        self.api.sprite_path(
+                            species_id, shiny=show_shiny, animated=False
+                        )
+                    ),
+                }
+            )
+        return rows
+
+    def _refresh_dex_rows(self) -> None:
+        all_rows = self._all_dex_rows()
+        rarity_order = ("common", "uncommon", "rare", "legendary")
+        counts = {
+            rarity: sum(row["rarity"] == rarity for row in all_rows)
+            for rarity in rarity_order
+        }
+        filters = [{"key": "all", "label": "Todas", "count": len(all_rows)}]
+        filters.extend(
+            {
+                "key": rarity,
+                "label": rarity.title(),
+                "count": counts[rarity],
+            }
+            for rarity in rarity_order
+            if counts[rarity]
+        )
+        valid_filters = {item["key"] for item in filters}
+        if self._dex_filter not in valid_filters:
+            self._dex_filter = "all"
+        filtered = (
+            all_rows
+            if self._dex_filter == "all"
+            else [row for row in all_rows if row["rarity"] == self._dex_filter]
+        )
+        page_size = 24
+        page_count = max(1, (len(filtered) + page_size - 1) // page_size)
+        self._dex_page = max(0, min(self._dex_page, page_count - 1))
+        start = self._dex_page * page_size
+        rarity_summary = " · ".join(
+            f"{rarity.title()} {counts[rarity]}"
+            for rarity in rarity_order
+            if counts[rarity]
+        )
+        summary = f"{len(all_rows)} especies"
+        if rarity_summary:
+            summary += f" · {rarity_summary}"
+        self._values.update(
+            dexEntries=filtered[start : start + page_size],
+            dexFilters=filters,
+            dexSummary=summary,
+            dexPage=self._dex_page + 1,
+            dexPageCount=page_count,
+            dexFilter=self._dex_filter,
+        )
+
     def _catch_rows(self) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for catch in reversed(self.state.catches):
             path_ids = catch.path_ids or [catch.species_id]
-            display_id = path_ids[-1]
-            if (
-                self.state.mon
-                and catch.base_id == self.state.mon.base_id
-                and catch.nature == self.state.mon.nature
-            ):
-                display_id = self.state.mon.current_id
+            is_current = self._is_current_catch(catch)
+            owned_index = len(path_ids) - 1
+            if is_current and self.state.mon is not None:
+                owned_index = min(len(path_ids) - 1, self.state.mon.stage_index)
+            display_id = path_ids[owned_index]
+            stages = []
+            for index, species_id in enumerate(path_ids):
+                owned = index <= owned_index
+                current = index == owned_index
+                stages.append(
+                    {
+                        "name": (
+                            self.api.localized_name(species_id, self.state.language)
+                            if owned
+                            else "???"
+                        ),
+                        "status": (
+                            "Actual"
+                            if current
+                            else ("Obtenida" if owned else "Futura")
+                        ),
+                        "owned": owned,
+                        "current": current,
+                        "sprite": _file_url(
+                            self.api.sprite_path(
+                                species_id,
+                                shiny=bool(catch.is_shiny and owned),
+                                animated=False,
+                            )
+                        ),
+                    }
+                )
             rows.append(
                 {
                     "name": self.api.localized_name(display_id, self.state.language),
                     "number": f"#{display_id:03d}",
                     "meta": f"{catch.rarity.title()} · {catch.nature} · {catch.caught_at[:10]}",
                     "shiny": bool(catch.is_shiny),
+                    "current": is_current,
+                    "stages": stages,
                     "sprite": _file_url(
                         self.api.sprite_path(
                             display_id, shiny=catch.is_shiny, animated=False
@@ -471,20 +630,31 @@ class QmlViewModel(QObject):
         display_mode = normalize_limit_display_mode(
             self.settings.value(LIMIT_DISPLAY_MODE_KEY, DEFAULT_LIMIT_DISPLAY_MODE)
         )
+        time_mode = normalize_limit_time_mode(
+            self.settings.value(LIMIT_TIME_MODE_KEY, DEFAULT_LIMIT_TIME_MODE)
+        )
+        warning = normalize_warning_threshold(
+            self.settings.value(WARNING_THRESHOLD_KEY, DEFAULT_WARNING_THRESHOLD)
+        )
+        critical = normalize_critical_threshold(
+            self.settings.value(CRITICAL_THRESHOLD_KEY, DEFAULT_CRITICAL_THRESHOLD)
+        )
         limits = []
         for key, provider_limits in result.limits.items():
             provider_name = PROVIDER_LABELS.get(key, key.title())
             for window in ordered_limit_windows(provider_limits):
                 reset = (
-                    format_limit_datetime(window.resets_at)
+                    format_limit_event_time(
+                        "Reinicia", window.resets_at, time_mode
+                    )
                     if window.resets_at
-                    else "Reset unknown"
+                    else "Reinicio desconocido"
                 )
                 used = max(0.0, min(100.0, float(window.used_percent)))
                 urgency = (
                     "critical"
-                    if used >= 95
-                    else ("warning" if used >= 80 else "neutral")
+                    if used >= critical
+                    else ("warning" if used >= warning else "neutral")
                 )
                 limits.append(
                     {
@@ -562,6 +732,7 @@ class QmlViewModel(QObject):
             "trayShowCost": "tray_show_cost",
             "trayShowLimit": "tray_show_limit",
             "limitDisplayMode": LIMIT_DISPLAY_MODE_KEY,
+            "limitTimeMode": LIMIT_TIME_MODE_KEY,
             "forecastEnabled": FORECAST_ENABLED_KEY,
             "limitNotifications": LIMIT_NOTIFICATIONS_KEY,
             "companionNotifications": COMPANION_NOTIFICATIONS_KEY,
@@ -572,10 +743,26 @@ class QmlViewModel(QObject):
         setting_key = known.get(key)
         if setting_key is None:
             return
-        if key in {"warningThreshold", "criticalThreshold"}:
-            value = int(value)
+        if key == "warningThreshold":
+            value = normalize_warning_threshold(value)
+            critical = normalize_critical_threshold(
+                self._values["criticalThreshold"]
+            )
+            if value >= critical:
+                critical = normalize_critical_threshold(value + 5)
+                self.settings.setValue(CRITICAL_THRESHOLD_KEY, critical)
+                self._values["criticalThreshold"] = critical
+        elif key == "criticalThreshold":
+            value = normalize_critical_threshold(value)
+            warning = normalize_warning_threshold(self._values["warningThreshold"])
+            if value <= warning:
+                warning = normalize_warning_threshold(value - 5)
+                self.settings.setValue(WARNING_THRESHOLD_KEY, warning)
+                self._values["warningThreshold"] = warning
         elif key == "limitDisplayMode":
             value = normalize_limit_display_mode(value)
+        elif key == "limitTimeMode":
+            value = normalize_limit_time_mode(value)
         self.settings.setValue(setting_key, value)
         self.settings.sync()
         self._values[key] = value
@@ -583,6 +770,28 @@ class QmlViewModel(QObject):
             self._refresh_dark_mode()
         self.dataChanged.emit()
         self.preferencesChanged.emit()
+
+    @Slot(str)
+    def setDexFilter(self, value: str) -> None:
+        self._dex_filter = str(value)
+        self._dex_page = 0
+        self._refresh_dex_rows()
+        self.dataChanged.emit()
+
+    @Slot(int)
+    def moveDexPage(self, delta: int) -> None:
+        self._dex_page += int(delta)
+        self._refresh_dex_rows()
+        self.dataChanged.emit()
+
+    @Slot(int)
+    def toggleDexVariant(self, species_id: int) -> None:
+        species_id = int(species_id)
+        self._dex_shiny_by_species[species_id] = not self._dex_shiny_by_species.get(
+            species_id, True
+        )
+        self._refresh_dex_rows()
+        self.dataChanged.emit()
 
     @Slot(int)
     def setRefreshMinutes(self, minutes: int) -> None:

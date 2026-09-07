@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QSettings, Qt
+from PySide6.QtCore import QEvent, QObject, QSettings, Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QProgressBar, QScrollArea
@@ -83,6 +83,25 @@ class UITests(unittest.TestCase):
         self.assertIsNotNone(window.quick.rootObject())
         self.assertGreaterEqual(window.minimumWidth(), 820)
 
+    def test_qml_shell_exposes_restored_settings_and_collection_controls(self):
+        window = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.app.processEvents()
+        root = window.quick.rootObject()
+
+        for object_name in (
+            "collectionModeControl",
+            "representativeCombo",
+            "limitDisplayControl",
+            "limitTimeControl",
+            "warningThresholdSpin",
+            "criticalThresholdSpin",
+            "trayLimitToggle",
+        ):
+            self.assertIsNotNone(root.findChild(QObject, object_name), object_name)
+        pet_size = root.findChild(QObject, "petSizeSlider")
+        self.assertIsNotNone(pet_size)
+        self.assertEqual(pet_size.property("from"), 48.0)
+
     def test_qml_view_model_renders_usage_limits_and_companion_progress(self):
         state = GameState(egg_usage=EGG_HATCH_THRESHOLD // 2)
         model = QmlViewModel(state, self.settings, FakeUIAPI())
@@ -106,6 +125,80 @@ class UITests(unittest.TestCase):
         self.assertEqual(model.companionProgress, 50)
         self.assertEqual(model.providers[0]["name"], "Codex")
         self.assertEqual(model.limits[0]["percentText"], "75% used")
+
+    def test_qml_limit_preferences_are_persisted_and_used_for_rendering(self):
+        self.settings.setValue("warnThreshold", 90)
+        self.settings.setValue("critThreshold", 95)
+        model = QmlViewModel(GameState(), self.settings, FakeUIAPI())
+        reset = datetime.now(timezone.utc) + timedelta(hours=2)
+        result = RefreshResult(
+            UsageSnapshot(scanned_at=datetime.now(timezone.utc)),
+            {"codex": ProviderLimits("codex", windows=[LimitWindow("5-hour", 92, reset)])},
+            {},
+            GameState(),
+            [],
+            None,
+            "Pokemon Egg",
+        )
+
+        model.render(result)
+        self.assertEqual(model.limits[0]["urgency"], "warning")
+        self.assertIn("Reinicia in", model.limits[0]["reset"])
+
+        model.setPreference("limitTimeMode", "datetime")
+        model.setPreference("warningThreshold", 95)
+        model.render(result)
+
+        self.assertEqual(model.limitTimeMode, "datetime")
+        self.assertEqual(model.criticalThreshold, 100)
+        self.assertEqual(model.limits[0]["urgency"], "neutral")
+        self.assertNotIn("Reinicia in", model.limits[0]["reset"])
+        self.assertEqual(self.settings.value("limit_time_display_mode"), "datetime")
+
+    def test_qml_dex_supports_paging_rarity_filters_and_shiny_variants(self):
+        catches = [
+            CatchRecord(
+                species_id,
+                species_id,
+                [species_id],
+                "rare" if species_id >= 25 else "common",
+                species_id == 25,
+                "Bold",
+                "2026-08-30T10:00:00",
+            )
+            for species_id in range(1, 27)
+        ]
+        model = QmlViewModel(GameState(catches=catches), self.settings, FakeUIAPI())
+
+        self.assertEqual(model.dexPageCount, 2)
+        self.assertEqual(len(model.dexEntries), 24)
+        self.assertIn("26 especies", model.dexSummary)
+
+        model.setDexFilter("rare")
+        self.assertEqual(model.dexPageCount, 1)
+        self.assertEqual(len(model.dexEntries), 2)
+        shiny = next(row for row in model.dexEntries if row["speciesId"] == 25)
+        self.assertTrue(shiny["showShiny"])
+
+        model.toggleDexVariant(25)
+        shiny = next(row for row in model.dexEntries if row["speciesId"] == 25)
+        self.assertFalse(shiny["showShiny"])
+
+    def test_qml_catch_history_exposes_current_and_future_evolution_stages(self):
+        state = GameState(
+            mon=MonState(1, [1, 2, 3], 1, 10, "common", False, "Hardy"),
+            catches=[
+                CatchRecord(1, 1, [1, 2, 3], "common", False, "Hardy", "2026-08-30T10:00:00")
+            ],
+        )
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+
+        self.assertTrue(model.catches[0]["current"])
+        self.assertEqual(
+            [stage["status"] for stage in model.catches[0]["stages"]],
+            ["Obtenida", "Actual", "Futura"],
+        )
+        self.assertEqual(model.catches[0]["stages"][2]["name"], "???")
 
     def test_legacy_desktop_pet_preferences_migrate_without_overwriting_current_values(self):
         self.settings.setValue("pet_visible", True)
