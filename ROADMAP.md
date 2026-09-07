@@ -111,13 +111,13 @@ Claude, Codex, Gemini, Antigravity, OpenCode, Hermes, Cursor, Grok, GitHub Copil
 
 ### P0 — recuperar funciones visibles perdidas al activar QML
 
-- [ ] Exponer en Ajustes QML `Mostrar límite en la bandeja`.
-- [ ] Exponer y validar los umbrales de advertencia y crítico ya existentes en el backend.
-- [ ] Exponer el selector compartido `Tiempo restante / Fecha y hora` y aplicarlo a Inicio, bandeja y mascota.
-- [ ] Corregir el slider de mascota para cubrir el rango real 48–192 px.
-- [ ] Sustituir el `ComboBox` usado/restante por un control segmentado claro y compacto.
-- [ ] Separar Pokédex y registro de capturas dentro de Colección.
-- [ ] Recuperar paginación, contadores/filtros, alternancia normal/Shiny y línea evolutiva en QML.
+- [x] Exponer en Ajustes QML `Mostrar límite en la bandeja`.
+- [x] Exponer y validar los umbrales de advertencia y crítico ya existentes en el backend.
+- [x] Exponer el selector compartido `Tiempo restante / Fecha y hora` y aplicarlo a Inicio, bandeja y mascota.
+- [x] Corregir el slider de mascota para cubrir el rango real 48–192 px.
+- [x] Sustituir el `ComboBox` usado/restante por un control segmentado claro y compacto.
+- [x] Separar Pokédex y registro de capturas dentro de Colección.
+- [x] Recuperar paginación, contadores/filtros, alternancia normal/Shiny y línea evolutiva en QML.
 - [ ] Añadir foco visible, orden de tabulación y nombres accesibles a los controles QML; verificar teclado completo.
 - [ ] Corregir `README.md` para no presentar como accesibles en QML funciones que solo conserva la vista Widgets antigua.
 
