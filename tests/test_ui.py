@@ -19,6 +19,7 @@ from poketokenbar_windows.models import (
     LimitWindow,
     ProviderLimits,
     ProviderUsage,
+    RateLimitResetCredit,
     UsageSnapshot,
 )
 from poketokenbar_windows.pokemon import EGG_HATCH_THRESHOLD, RARE_CANDY_XP
@@ -80,8 +81,39 @@ class UITests(unittest.TestCase):
         self.app.processEvents()
 
         self.assertEqual(window.quick.status(), QQuickWidget.Status.Ready)
-        self.assertIsNotNone(window.quick.rootObject())
-        self.assertGreaterEqual(window.minimumWidth(), 820)
+        root = window.quick.rootObject()
+        self.assertIsNotNone(root)
+        self.assertIsNotNone(root.findChild(QObject, "topNavigation"))
+        self.assertIsNotNone(root.findChild(QObject, "homePage"))
+        self.assertEqual(window.minimumWidth(), 520)
+        self.assertEqual(window.minimumHeight(), 640)
+        self.assertEqual((window.width(), window.height()), (560, 740))
+
+    def test_qml_home_has_no_page_level_scroll_and_lists_only_overflow_as_needed(self):
+        qml = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "poketokenbar_windows"
+            / "qml"
+            / "Main.qml"
+        ).read_text(encoding="utf-8")
+        home_block = qml[
+            qml.index('id: homePage') : qml.index('id: collectionPage')
+        ]
+        self.assertIn(
+            'Item {\n                id: homePage',
+            qml,
+        )
+        self.assertIn("id: providersList", home_block)
+        self.assertIn("id: limitsContent", home_block)
+        self.assertIn(
+            "providersList.contentHeight > providersList.height",
+            home_block,
+        )
+        self.assertIn(
+            "limitsContent.contentHeight > limitsContent.height",
+            home_block,
+        )
 
     def test_qml_shell_exposes_restored_settings_and_collection_controls(self):
         window = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
@@ -123,6 +155,8 @@ class UITests(unittest.TestCase):
 
         self.assertEqual(model.todayTokens, "1.5M")
         self.assertEqual(model.companionProgress, 50)
+        self.assertEqual(model.companionProgressText, "2.5M / 5M")
+        self.assertEqual(model.companionLevelText, "Lv. 50")
         self.assertEqual(model.providers[0]["name"], "Codex")
         self.assertEqual(model.limits[0]["percentText"], "75% used")
 
@@ -143,7 +177,7 @@ class UITests(unittest.TestCase):
 
         model.render(result)
         self.assertEqual(model.limits[0]["urgency"], "warning")
-        self.assertIn("Reinicia in", model.limits[0]["reset"])
+        self.assertIn("resets in", model.limits[0]["reset"])
 
         model.setPreference("limitTimeMode", "datetime")
         model.setPreference("warningThreshold", 95)
@@ -152,8 +186,102 @@ class UITests(unittest.TestCase):
         self.assertEqual(model.limitTimeMode, "datetime")
         self.assertEqual(model.criticalThreshold, 100)
         self.assertEqual(model.limits[0]["urgency"], "neutral")
-        self.assertNotIn("Reinicia in", model.limits[0]["reset"])
+        self.assertNotIn("resets in", model.limits[0]["reset"])
         self.assertEqual(self.settings.value("limit_time_display_mode"), "datetime")
+
+    def test_qml_supports_english_spanish_and_galician_as_full_ui_languages(self):
+        states = (
+            (GameState(language="en", egg_usage=2_500_000), "Home", "Lv. 50"),
+            (GameState(language="es", egg_usage=2_500_000), "Inicio", "Nv. 50"),
+            (GameState(language="gl", egg_usage=2_500_000), "Inicio", "Nv. 50"),
+        )
+        for state, home_label, level in states:
+            with self.subTest(language=state.language):
+                model = QmlViewModel(state, self.settings, FakeUIAPI())
+                self.assertEqual(model.strings["nav_home"], home_label)
+                self.assertEqual(model.companionLevelText, level)
+                self.assertEqual(
+                    [option["key"] for option in model.languageOptions],
+                    ["en", "es", "gl"],
+                )
+
+    def test_qml_restores_forecasts_for_all_timed_limits_and_reset_credits(self):
+        now = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
+        limits = ProviderLimits(
+            "codex",
+            plan="Plus",
+            windows=[
+                LimitWindow(
+                    "5-hour",
+                    75,
+                    now + timedelta(hours=2),
+                    duration_minutes=300,
+                ),
+                LimitWindow(
+                    "Weekly",
+                    50,
+                    now + timedelta(days=5),
+                    duration_minutes=7 * 24 * 60,
+                ),
+            ],
+            reset_credits_available=3,
+            reset_credits=[
+                RateLimitResetCredit(expires_at=now + timedelta(days=2))
+            ],
+        )
+        model = QmlViewModel(GameState(), self.settings, FakeUIAPI())
+        model.render(
+            RefreshResult(
+                UsageSnapshot(scanned_at=now),
+                {"codex": limits},
+                {},
+                GameState(),
+                [],
+                None,
+                "Pokemon Egg",
+            )
+        )
+
+        windows = [row for row in model.limits if row["kind"] == "window"]
+        credit = next(row for row in model.limits if row["kind"] == "credit")
+        reserve = next(row for row in model.limits if row["kind"] == "unavailable")
+        self.assertEqual(len(windows), 2)
+        self.assertTrue(all(row["forecast"] for row in windows))
+        self.assertIn("3 resets available", credit["label"])
+        self.assertIn("first expires", credit["label"])
+        self.assertEqual(reserve["label"], "Luna Reserve")
+
+        self.settings.setValue("limits_forecast_enabled", False)
+        model.render(
+            RefreshResult(
+                UsageSnapshot(scanned_at=now),
+                {"codex": limits},
+                {},
+                GameState(),
+                [],
+                None,
+                "Pokemon Egg",
+            )
+        )
+        self.assertTrue(
+            all(
+                not row["forecast"]
+                for row in model.limits
+                if row["kind"] == "window"
+            )
+        )
+
+    def test_qml_representative_choices_include_pokedex_numbers(self):
+        state = GameState(
+            mon=MonState(1, [1, 2], 0, 0, "common", False, "Hardy"),
+            catches=[
+                CatchRecord(1, 1, [1, 2], "common", False, "Hardy", "2026-09-01")
+            ],
+        )
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+
+        self.assertEqual(model.collection[0]["display"], "Follow active companion")
+        self.assertTrue(any(row["display"].startswith("#001 ") for row in model.collection[1:]))
 
     def test_qml_dex_supports_paging_rarity_filters_and_shiny_variants(self):
         catches = [
@@ -172,7 +300,7 @@ class UITests(unittest.TestCase):
 
         self.assertEqual(model.dexPageCount, 2)
         self.assertEqual(len(model.dexEntries), 24)
-        self.assertIn("26 especies", model.dexSummary)
+        self.assertIn("26 species", model.dexSummary)
 
         model.setDexFilter("rare")
         self.assertEqual(model.dexPageCount, 1)
@@ -196,7 +324,7 @@ class UITests(unittest.TestCase):
         self.assertTrue(model.catches[0]["current"])
         self.assertEqual(
             [stage["status"] for stage in model.catches[0]["stages"]],
-            ["Obtenida", "Actual", "Futura"],
+            ["Obtained", "Current", "Future"],
         )
         self.assertEqual(model.catches[0]["stages"][2]["name"], "???")
 

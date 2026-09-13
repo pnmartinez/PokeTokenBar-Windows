@@ -17,9 +17,14 @@ from .formatting import (
     LIMIT_TIME_MODE_KEY,
     DEFAULT_LIMIT_TIME_MODE,
     compact_tokens,
-    format_limit_event_time,
+    format_limit_countdown,
+    format_limit_datetime,
+    is_reserve_window,
     limit_display_percent,
-    limit_percent_text,
+    limit_forecast,
+    limit_forecast_unavailable_reason,
+    limit_reset_expiry,
+    limit_reset_urgency,
     normalize_limit_display_mode,
     normalize_limit_time_mode,
     ordered_limit_windows,
@@ -36,13 +41,21 @@ from .notifications import (
     normalize_critical_threshold,
     normalize_warning_threshold,
 )
+from .localization import (
+    LANGUAGE_OPTIONS,
+    normalize_language,
+    text as translated_text,
+    ui_strings,
+)
 from .pet_logic import PET_DEFAULT_SIZE, normalize_pet_size, settings_bool
 from .pokemon import (
+    EGG_HATCH_THRESHOLD,
     MINT_PRICE,
     RARE_CANDY_PRICE,
     SHINY_CHARM_PRICE,
     PokeAPIClient,
     egg_price,
+    phase_threshold,
 )
 from .state import GameState, companion_progress_percent, owned_representative_options
 from .usage import PROVIDER_LABELS
@@ -100,10 +113,11 @@ class QmlViewModel(QObject):
         self._dex_page = 0
         self._dex_filter = "all"
         self._dex_shiny_by_species: dict[int, bool] = {}
+        language = normalize_language(state.language)
         self._values: dict[str, Any] = {
             "loading": True,
             "refreshEnabled": False,
-            "statusText": "Loading usage and limits…",
+            "statusText": translated_text(language, "loading"),
             "feedbackText": "",
             "toastText": "",
             "toastShiny": False,
@@ -111,7 +125,9 @@ class QmlViewModel(QObject):
             "companionName": "Pokémon Egg",
             "companionSubtitle": "Preparing your companion",
             "companionProgress": 0,
-            "companionProgressText": "0% until hatching",
+            "companionProgressText": f"0 / {compact_tokens(EGG_HATCH_THRESHOLD)}",
+            "companionLevelText": "Lv. 0",
+            "companionEvolutionText": translated_text(language, "hatch_hint"),
             "spriteUrl": "",
             "todayTokens": "—",
             "todayCost": "—",
@@ -168,7 +184,9 @@ class QmlViewModel(QObject):
             ),
             "theme": str(settings.value("theme", "system")),
             "darkMode": False,
-            "language": state.language,
+            "language": language,
+            "strings": ui_strings(language),
+            "languageOptions": list(LANGUAGE_OPTIONS),
             "autostart": autostart_enabled(),
         }
         self._refresh_dark_mode()
@@ -204,6 +222,12 @@ class QmlViewModel(QObject):
     )
     companionProgressText = Property(
         str, lambda self: self._values["companionProgressText"], notify=dataChanged
+    )
+    companionLevelText = Property(
+        str, lambda self: self._values["companionLevelText"], notify=dataChanged
+    )
+    companionEvolutionText = Property(
+        str, lambda self: self._values["companionEvolutionText"], notify=dataChanged
     )
     spriteUrl = Property(
         str, lambda self: self._values["spriteUrl"], notify=dataChanged
@@ -301,6 +325,12 @@ class QmlViewModel(QObject):
     theme = Property(str, lambda self: self._values["theme"], notify=dataChanged)
     darkMode = Property(bool, lambda self: self._values["darkMode"], notify=dataChanged)
     language = Property(str, lambda self: self._values["language"], notify=dataChanged)
+    strings = Property(
+        "QVariantMap", lambda self: self._values["strings"], notify=dataChanged
+    )
+    languageOptions = Property(
+        "QVariantList", lambda self: self._values["languageOptions"], notify=dataChanged
+    )
     autostart = Property(
         bool, lambda self: self._values["autostart"], notify=dataChanged
     )
@@ -322,38 +352,76 @@ class QmlViewModel(QObject):
         self._values[key] = value
         self.dataChanged.emit()
 
+    def _language(self) -> str:
+        return normalize_language(self._values.get("language", self.state.language))
+
+    def _tr(self, key: str, **values: Any) -> str:
+        return translated_text(self._language(), key, **values)
+
+    def _event_text(
+        self,
+        label: str,
+        value: Any,
+        time_mode: str,
+        now: Any = None,
+        *,
+        approximate: bool = False,
+    ) -> str:
+        if normalize_limit_time_mode(time_mode) == "datetime":
+            return f"{label} {format_limit_datetime(value)}"
+        connector = "in" if self._language() == "en" else "en"
+        countdown = format_limit_countdown(value, now, approximate=approximate)
+        return f"{label} {connector} {countdown}"
+
     def _render_state(self) -> None:
         state = self.state
+        language = normalize_language(state.language)
+        self._values["language"] = language
+        self._values["strings"] = ui_strings(language)
         progress = companion_progress_percent(state)
+        level_prefix = "Lv." if language == "en" else "Nv."
         if state.mon is None:
-            name = "Pokémon Egg"
+            name = self._tr("pokemon_egg")
             tier = f" · {state.egg_tier.title()}+" if state.egg_tier else ""
-            subtitle = f"Waiting to hatch{tier}"
-            progress_text = f"{progress}% until hatching"
+            subtitle = self._tr("waiting_to_hatch", tier=tier)
+            evolution_text = self._tr("hatch_hint")
+            value = state.egg_usage
+            target = EGG_HATCH_THRESHOLD
             sprite_path = self.api.egg_sprite_path()
         else:
             mon = state.mon
-            name = self.api.localized_name(mon.current_id, state.language)
+            name = self.api.localized_name(mon.current_id, language)
             shiny = "✨ " if mon.is_shiny else ""
-            subtitle = f"{shiny}{mon.rarity.title()} · {mon.nature} · stage {mon.stage_index + 1}/{len(mon.path_ids)}"
-            progress_text = (
-                "Fully evolved"
-                if mon.stage_index + 1 >= len(mon.path_ids)
-                else f"{progress}% until the next evolution"
+            rarity = self._tr(mon.rarity)
+            subtitle = (
+                f"{shiny}{rarity} · {mon.nature} {self._tr('nature')} · "
+                f"{self._tr('stage')} {mon.stage_index + 1}/{len(mon.path_ids)}"
             )
+            value = mon.used_at_stage
+            target = phase_threshold(mon.rarity, len(mon.path_ids), mon.stage_index)
+            if mon.stage_index + 1 < len(mon.path_ids):
+                next_name = self.api.localized_name(
+                    mon.path_ids[mon.stage_index + 1], language
+                )
+                evolution_text = self._tr("current_next", current=name, next=next_name)
+            else:
+                evolution_text = self._tr("current_final", current=name)
             sprite_path = self.api.sprite_path(mon.current_id, shiny=mon.is_shiny)
 
         self._values.update(
             companionName=name,
             companionSubtitle=subtitle,
             companionProgress=progress,
-            companionProgressText=progress_text,
+            companionProgressText=f"{compact_tokens(value)} / {compact_tokens(target)}",
+            companionLevelText=f"{level_prefix} {progress}",
+            companionEvolutionText=evolution_text,
             spriteUrl=_file_url(sprite_path),
             wallet=compact_tokens(state.wallet),
             rareCandyCount=int(state.inventory.get("rare_candy", 0)),
             mintCount=int(state.inventory.get("mint", 0)),
             shinyCharmActive=state.shiny_charm_active,
-            language=state.language,
+            language=language,
+            strings=ui_strings(language),
         )
         self._values["collection"] = self._collection_rows()
         self._refresh_dex_rows()
@@ -366,7 +434,8 @@ class QmlViewModel(QObject):
         rows: list[dict[str, Any]] = [
             {
                 "speciesId": 0,
-                "name": "Follow active companion",
+                "name": self._tr("follow_companion"),
+                "display": self._tr("follow_companion"),
                 "number": "AUTO",
                 "shiny": False,
                 "sprite": self._values.get("spriteUrl", ""),
@@ -375,12 +444,16 @@ class QmlViewModel(QObject):
         ]
         for subject in owned_representative_options(self.state):
             species_id = int(subject.species_id or 0)
+            name = self.api.localized_name(species_id, self._language())
+            number = f"#{species_id:03d}"
+            shiny = bool(subject.is_shiny)
             rows.append(
                 {
                     "speciesId": species_id,
-                    "name": self.api.localized_name(species_id, self.state.language),
-                    "number": f"#{species_id:03d}",
-                    "shiny": bool(subject.is_shiny),
+                    "name": name,
+                    "display": f"{'✨ ' if shiny else ''}{number} {name}",
+                    "number": number,
+                    "shiny": shiny,
                     "sprite": _file_url(
                         self.api.sprite_path(
                             species_id, shiny=subject.is_shiny, animated=False
@@ -429,7 +502,7 @@ class QmlViewModel(QObject):
             rows.append(
                 {
                     **row,
-                    "name": self.api.localized_name(species_id, self.state.language),
+                    "name": self.api.localized_name(species_id, self._language()),
                     "number": f"#{species_id:03d}",
                     "showShiny": show_shiny,
                     "sprite": _file_url(
@@ -448,13 +521,9 @@ class QmlViewModel(QObject):
             rarity: sum(row["rarity"] == rarity for row in all_rows)
             for rarity in rarity_order
         }
-        filters = [{"key": "all", "label": "Todas", "count": len(all_rows)}]
+        filters = [{"key": "all", "label": self._tr("all"), "count": len(all_rows)}]
         filters.extend(
-            {
-                "key": rarity,
-                "label": rarity.title(),
-                "count": counts[rarity],
-            }
+            {"key": rarity, "label": self._tr(rarity), "count": counts[rarity]}
             for rarity in rarity_order
             if counts[rarity]
         )
@@ -471,11 +540,11 @@ class QmlViewModel(QObject):
         self._dex_page = max(0, min(self._dex_page, page_count - 1))
         start = self._dex_page * page_size
         rarity_summary = " · ".join(
-            f"{rarity.title()} {counts[rarity]}"
+            f"{self._tr(rarity)} {counts[rarity]}"
             for rarity in rarity_order
             if counts[rarity]
         )
-        summary = f"{len(all_rows)} especies"
+        summary = self._tr("species_count", count=len(all_rows))
         if rarity_summary:
             summary += f" · {rarity_summary}"
         self._values.update(
@@ -503,14 +572,14 @@ class QmlViewModel(QObject):
                 stages.append(
                     {
                         "name": (
-                            self.api.localized_name(species_id, self.state.language)
+                            self.api.localized_name(species_id, self._language())
                             if owned
                             else "???"
                         ),
                         "status": (
-                            "Actual"
+                            self._tr("current")
                             if current
-                            else ("Obtenida" if owned else "Futura")
+                            else (self._tr("obtained") if owned else self._tr("future"))
                         ),
                         "owned": owned,
                         "current": current,
@@ -525,9 +594,9 @@ class QmlViewModel(QObject):
                 )
             rows.append(
                 {
-                    "name": self.api.localized_name(display_id, self.state.language),
+                    "name": self.api.localized_name(display_id, self._language()),
                     "number": f"#{display_id:03d}",
-                    "meta": f"{catch.rarity.title()} · {catch.nature} · {catch.caught_at[:10]}",
+                    "meta": f"{self._tr(catch.rarity)} · {catch.nature} · {catch.caught_at[:10]}",
                     "shiny": bool(catch.is_shiny),
                     "current": is_current,
                     "stages": stages,
@@ -544,43 +613,22 @@ class QmlViewModel(QObject):
         wallet = self.state.wallet
         inventory = self.state.inventory
         definitions = (
-            (
-                "item",
-                "rare_candy",
-                "Rare Candy",
-                "Progress boost",
-                "🍬",
-                RARE_CANDY_PRICE,
-            ),
-            ("item", "mint", "Mint", "Change nature", "🌿", MINT_PRICE),
-            (
-                "item",
-                "shiny_charm",
-                "Shiny Charm",
-                "Better shiny odds",
-                "✨",
-                SHINY_CHARM_PRICE,
-            ),
-            ("egg", "normal", "Normal Egg", "A fresh companion", "🥚", egg_price(None)),
-            (
-                "egg",
-                "uncommon",
-                "Uncommon Egg",
-                "Uncommon or better",
-                "🔵",
-                egg_price("uncommon"),
-            ),
-            ("egg", "rare", "Rare Egg", "Rare or better", "🟣", egg_price("rare")),
+            ("item", "rare_candy", "rare_candy", "rare_candy_description", "🍬", RARE_CANDY_PRICE),
+            ("item", "mint", "mint", "mint_description", "🌿", MINT_PRICE),
+            ("item", "shiny_charm", "shiny_charm", "shiny_charm_description", "✨", SHINY_CHARM_PRICE),
+            ("egg", "normal", "normal_egg", "normal_egg_description", "🥚", egg_price(None)),
+            ("egg", "uncommon", "uncommon_egg", "uncommon_egg_description", "🔵", egg_price("uncommon")),
+            ("egg", "rare", "rare_egg", "rare_egg_description", "🟣", egg_price("rare")),
         )
         rows = []
-        for kind, key, title, subtitle, icon, price in definitions:
+        for kind, key, title_key, subtitle_key, icon, price in definitions:
             owned = key == "shiny_charm" and inventory.get("shiny_charm", 0) > 0
             rows.append(
                 {
                     "kind": kind,
                     "key": key,
-                    "title": title,
-                    "subtitle": subtitle,
+                    "title": self._tr(title_key),
+                    "subtitle": self._tr(subtitle_key),
                     "icon": icon,
                     "price": compact_tokens(price),
                     "enabled": wallet >= price and not owned,
@@ -596,6 +644,9 @@ class QmlViewModel(QObject):
 
     def render(self, result: Any) -> None:
         self.state = result.state
+        language = normalize_language(result.state.language)
+        self._values["language"] = language
+        self._values["strings"] = ui_strings(language)
         snapshot = result.snapshot
         providers = []
         for key, usage in sorted(
@@ -619,7 +670,7 @@ class QmlViewModel(QObject):
                 {
                     "key": key,
                     "name": PROVIDER_LABELS.get(key, key.title()),
-                    "today": "Unavailable",
+                    "today": self._tr("unavailable"),
                     "week": "—",
                     "month": "—",
                     "cost": "—",
@@ -633,22 +684,33 @@ class QmlViewModel(QObject):
         time_mode = normalize_limit_time_mode(
             self.settings.value(LIMIT_TIME_MODE_KEY, DEFAULT_LIMIT_TIME_MODE)
         )
+        forecast_enabled = settings_bool(
+            self.settings.value(FORECAST_ENABLED_KEY, DEFAULT_FORECAST_ENABLED),
+            DEFAULT_FORECAST_ENABLED,
+        )
         warning = normalize_warning_threshold(
             self.settings.value(WARNING_THRESHOLD_KEY, DEFAULT_WARNING_THRESHOLD)
         )
         critical = normalize_critical_threshold(
             self.settings.value(CRITICAL_THRESHOLD_KEY, DEFAULT_CRITICAL_THRESHOLD)
         )
+        now = snapshot.scanned_at
         limits = []
+        reason_keys = {
+            "reset time unavailable": "forecast_reset_unknown",
+            "window duration unavailable": "forecast_duration_unknown",
+            "window already reset": "forecast_already_reset",
+            "not enough data yet": "forecast_not_enough",
+            "collecting usage data": "forecast_collecting",
+        }
         for key, provider_limits in result.limits.items():
             provider_name = PROVIDER_LABELS.get(key, key.title())
-            for window in ordered_limit_windows(provider_limits):
+            ordered_windows = ordered_limit_windows(provider_limits)
+            for window in ordered_windows:
                 reset = (
-                    format_limit_event_time(
-                        "Reinicia", window.resets_at, time_mode
-                    )
+                    self._event_text(self._tr("resets"), window.resets_at, time_mode, now)
                     if window.resets_at
-                    else "Reinicio desconocido"
+                    else self._tr("reset_unknown")
                 )
                 used = max(0.0, min(100.0, float(window.used_percent)))
                 urgency = (
@@ -656,25 +718,105 @@ class QmlViewModel(QObject):
                     if used >= critical
                     else ("warning" if used >= warning else "neutral")
                 )
+                forecast_text = ""
+                if forecast_enabled:
+                    forecast = limit_forecast(window, now)
+                    if forecast is not None:
+                        if forecast.before_reset:
+                            when = (
+                                format_limit_datetime(forecast.depletion_at)
+                                if time_mode == "datetime"
+                                else format_limit_countdown(
+                                    forecast.depletion_at, now, approximate=True
+                                )
+                            )
+                            forecast_text = self._tr("forecast_full", when=when)
+                        else:
+                            forecast_text = self._tr("forecast_safe")
+                    else:
+                        reason = limit_forecast_unavailable_reason(window, now)
+                        if reason:
+                            forecast_text = self._tr(reason_keys.get(reason, reason))
                 limits.append(
                     {
+                        "kind": "window",
                         "provider": provider_name,
                         "plan": provider_limits.plan or "",
-                        "label": window.label,
+                        "label": (
+                            self._tr("limit_5_hour")
+                            if window.label.lower() == "5-hour"
+                            else (
+                                self._tr("limit_weekly")
+                                if window.label.lower() == "weekly"
+                                else window.label
+                            )
+                        ),
                         "percent": round(limit_display_percent(used, display_mode)),
-                        "percentText": limit_percent_text(used, display_mode),
+                        "percentText": (
+                            f"{round(limit_display_percent(used, display_mode))}% "
+                            f"{self._tr('remaining' if display_mode == 'remaining' else 'used').lower()}"
+                        ),
                         "reset": reset,
+                        "forecast": forecast_text,
                         "urgency": urgency,
                     }
                 )
+
+            if key.lower() == "codex" and not any(
+                is_reserve_window(window) for window in ordered_windows
+            ):
+                limits.append(
+                    {
+                        "kind": "unavailable",
+                        "provider": provider_name,
+                        "plan": provider_limits.plan or "",
+                        "label": "Luna Reserve",
+                        "percent": 0,
+                        "percentText": self._tr("reserve_unavailable"),
+                        "reset": "",
+                        "forecast": "",
+                        "urgency": "neutral",
+                    }
+                )
+
+            count = int(provider_limits.reset_credits_available)
+            if count > 0:
+                expiry = limit_reset_expiry(provider_limits)
+                summary = self._tr(
+                    "reset_available" if count == 1 else "resets_available",
+                    count=count,
+                )
+                if expiry is not None:
+                    expiry_label = self._tr("expires" if count == 1 else "first_expires")
+                    summary += " · " + self._event_text(
+                        expiry_label, expiry, time_mode, now
+                    )
+                else:
+                    summary += " · " + self._tr("expiry_unknown")
+                limits.append(
+                    {
+                        "kind": "credit",
+                        "provider": provider_name,
+                        "plan": provider_limits.plan or "",
+                        "label": summary,
+                        "percent": 0,
+                        "percentText": "",
+                        "reset": "",
+                        "forecast": "",
+                        "urgency": limit_reset_urgency(provider_limits, now),
+                    }
+                )
+
+        status_key = "updated_warnings" if result.scan_errors else "updated"
+        stamp = (
+            snapshot.scanned_at.astimezone().strftime("%H:%M")
+            if snapshot.scanned_at
+            else ""
+        )
         self._values.update(
             loading=False,
             refreshEnabled=True,
-            statusText=(
-                f"Updated {snapshot.scanned_at.astimezone().strftime('%H:%M')}"
-                if snapshot.scanned_at
-                else "Updated"
-            ),
+            statusText=self._tr(status_key) + (f" · {stamp}" if stamp else ""),
             todayTokens=compact_tokens(snapshot.today_tokens),
             todayCost=f"${snapshot.today_cost:,.2f}",
             weekTokens=compact_tokens(snapshot.week_tokens),
@@ -690,7 +832,12 @@ class QmlViewModel(QObject):
         self.dataChanged.emit()
 
     def set_status(self, text: str) -> None:
-        self._set("statusText", text)
+        known = {
+            "Data is stale · refreshing…": "status_stale",
+            "Updating…": "status_updating",
+            "Update failed · retry scheduled": "status_failed",
+        }
+        self._set("statusText", self._tr(known[text]) if text in known else text)
 
     def show_feedback(self, text: str) -> None:
         self._set("feedbackText", text)
@@ -803,10 +950,13 @@ class QmlViewModel(QObject):
 
     @Slot(str)
     def setLanguage(self, language: str) -> None:
-        if language not in {"en", "es", "fr", "ja"}:
+        normalized = normalize_language(language)
+        if normalized != language:
             return
-        self._set("language", language)
-        self.languageChanged.emit(language)
+        self._values["language"] = normalized
+        self._values["strings"] = ui_strings(normalized)
+        self.dataChanged.emit()
+        self.languageChanged.emit(normalized)
 
     @Slot(int)
     def chooseRepresentative(self, index: int) -> None:
@@ -846,7 +996,7 @@ class QmlViewModel(QObject):
             set_autostart(enabled)
         except OSError:
             enabled = autostart_enabled()
-            self.show_feedback("Windows could not change the startup setting.")
+            self.show_feedback(self._tr("startup_error"))
         self._set("autostart", bool(enabled))
 
 
@@ -866,8 +1016,8 @@ class QmlMainWindow(QMainWindow):
     def __init__(self, state: GameState, settings: QSettings, api: PokeAPIClient):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.setMinimumSize(820, 580)
-        self.resize(1080, 720)
+        self.setMinimumSize(520, 640)
+        self.resize(560, 740)
 
         self.view_model = QmlViewModel(state, settings, api)
         self.view_model.refreshRequested.connect(self.refresh_requested)

@@ -50,7 +50,18 @@ class QmlKeyboardTests(unittest.TestCase):
             mon=MonState(1, [1, 2, 3], 1, 10, "common", False, "Hardy"),
             used_since_install=10_000_000_000,
             inventory={"rare_candy": 1, "mint": 1, "shiny_charm": 0},
-            catches=[CatchRecord(i, i, [i], "common", i == 1, "Hardy", "2026-09-01") for i in range(1, 27)],
+            catches=[
+                CatchRecord(
+                    i,
+                    i,
+                    [1, 2, 3] if i == 1 else [i],
+                    "common",
+                    i == 1,
+                    "Hardy",
+                    "2026-09-01",
+                )
+                for i in range(1, 27)
+            ],
         )
         self.window = QmlMainWindow(self.state, self.settings, LocalSprites())
         self.addCleanup(self.window.deleteLater)
@@ -88,7 +99,7 @@ class QmlKeyboardTests(unittest.TestCase):
         self.key(Qt.Key_Space)
 
     def test_tab_and_backtab_keep_every_page_control_named_and_on_screen(self):
-        for width in (820, 1080):
+        for width in (520, 820):
             for theme in ("light", "dark"):
                 self.window.resize(width, 580)
                 self.window.view_model.setPreference("theme", theme)
@@ -122,9 +133,9 @@ class QmlKeyboardTests(unittest.TestCase):
     def test_restored_settings_respond_to_keyboard_and_persist(self):
         self.root.setProperty("currentPage", 4)
         self.app.processEvents()
-        self.activate("Porcentaje de cuota: Restante")
+        self.activate("Quota percentage: Remaining")
         self.assertEqual(self.settings.value("limit_display_mode"), "remaining")
-        self.activate("Formato de reinicios: Fecha")
+        self.activate("Reset format: Date")
         self.assertEqual(self.settings.value("limit_time_display_mode"), "datetime")
         warning = self.root.findChild(QObject, "warningThresholdSpin")
         warning.forceActiveFocus(Qt.TabFocusReason)
@@ -134,7 +145,7 @@ class QmlKeyboardTests(unittest.TestCase):
         critical.forceActiveFocus(Qt.TabFocusReason)
         self.key(Qt.Key_Down)
         self.assertEqual(self.settings.value("critThreshold", type=int), 90)
-        self.activate("Límite principal en la bandeja")
+        self.activate("Primary limit in tray")
         self.assertFalse(self.settings.value("tray_show_limit", type=bool))
         slider = self.root.findChild(QObject, "petSizeSlider")
         slider.forceActiveFocus(Qt.TabFocusReason)
@@ -150,25 +161,35 @@ class QmlKeyboardTests(unittest.TestCase):
     def test_limits_panel_contains_all_rows_including_more_than_three(self):
         panel = self.root.findChild(QObject, "limitsPanel")
         content = self.root.findChild(QObject, "limitsContent")
-        self.assertEqual(len(self.window.view_model.limits), 5)
-        self.assertGreater(panel.height(), 250)
-        self.assertLessEqual(content.implicitHeight(), content.height() + 1)
-        for item in content.childItems():
-            if item.isVisible():
-                self.assertLessEqual(item.y() + item.height(), content.height() + 1)
+        self.assertEqual(len(self.window.view_model.limits), 6)
+        self.assertGreaterEqual(panel.height(), 90)
+        self.assertEqual(content.property("count"), 6)
+        self.assertGreater(content.property("contentHeight"), content.height())
+
+    def test_catch_log_declares_evolution_arrows(self):
+        qml = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "poketokenbar_windows"
+            / "qml"
+            / "Main.qml"
+        ).read_text(encoding="utf-8")
+        self.assertIn('objectName: "evolutionArrow"', qml)
+        self.assertIn('visible: index > 0; text: "→"', qml)
+        self.assertEqual(len(self.window.view_model.catches[-1]["stages"]), 3)
 
     def test_collection_can_be_paged_and_switched_using_keyboard(self):
         self.root.setProperty("currentPage", 1)
         self.app.processEvents()
-        self.activate("Ver normal de Pokemon 1")
+        self.activate("Show normal Pokemon 1")
         self.assertFalse(self.window.view_model.dexEntries[0]["showShiny"])
-        self.activate("Siguiente →")
+        self.activate("Next →")
         self.assertEqual(self.window.view_model.dexPage, 2)
-        self.activate("← Anterior")
+        self.activate("← Previous")
         self.assertEqual(self.window.view_model.dexPage, 1)
-        self.activate("Vista de colección: Capturas")
+        self.activate("Collection view: Catch log")
         self.assertEqual(self.root.property("collectionMode"), "catches")
-        self.activate("Vista de colección: Pokédex")
+        self.activate("Collection view: Pokédex")
         self.assertEqual(self.root.property("collectionMode"), "dex")
 
 
