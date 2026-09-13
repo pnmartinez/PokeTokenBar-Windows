@@ -29,6 +29,20 @@ main at 37763d3c367068492c18f6e51b45977c2d27f6d5 (after tag v2.5.3):
 
 Recent upstream changes were also reviewed for follow-up work. The most useful independent candidates are per-provider additional scan folders, animation-quality controls, provider account labels/session-key setup, Antigravity official limits, and the newer Pi/omp providers. They are intentionally not mixed into this focused UI/startup branch.
 
+## UI/UX inventory review
+
+The visible feature inventory was reviewed again on 2026-09-04 against upstream
+`main` at `5f1ef524a104dceee681a21c13a92a7404c6f176`. The resulting status matrix and
+prioritized work are recorded in `ROADMAP.md`. This audit treats the active
+`QmlMainWindow` as the product surface: behavior that remains only in the legacy
+Qt Widgets window or in the Python backend is marked partial rather than complete.
+
+Upstream is four commits ahead of the previous comparison point. The only new
+portable UI behavior is that all three egg cards remain visible during the egg
+stage and explain why buying is disabled. The bundled Codex locator change is
+specific to `ChatGPT.app` on macOS; the status-bar sprite optimization and comment
+cleanup do not add Windows-visible features.
+
 ## Syncing future upstream changes
 
 When upstream changes provider formats or game constants, compare these areas first:
