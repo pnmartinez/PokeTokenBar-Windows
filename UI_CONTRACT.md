@@ -22,12 +22,16 @@ This document records user-visible behavior that must survive visual redesigns a
 
 ## Collection and settings
 
-- Catch history shows one large sprite per evolution stage, arrows between stages, clear ownership labels, and the active Raising badge aligned to the right. The header does not duplicate the current stage sprite.
-- The desktop representative setting explains that it controls the tray icon and floating desktop pet.
+- Pokédex cards use most of their image area. Selecting a card opens that companion as a large animated sprite; Previous and Next browse the full filtered collection across page boundaries, and Back restores the matching grid page.
+- Catch history shows one large sprite per evolution stage, arrows between stages, a sentence stating whether the line is complete, clear ownership labels, and the active Raising badge aligned to the right. The header does not duplicate the current stage sprite.
+- The desktop representative setting belongs to the Desktop pet group and explains that it controls the tray icon and floating desktop pet.
 - Representative choices include the Pokédex number and name. Following the active companion remains an explicit option.
 - The single language setting controls the interface, Pokémon names, tray tooltip and context menu, desktop pet tooltip and context menu, and limit notifications.
+- Settings provide a short tooltip and accessible description for every non-obvious control. Reset format calls the countdown option Time remaining rather than Time.
+- Dark mode controls and secondary text retain readable contrast; combo boxes and numeric selectors use the same panel palette as the rest of the interface.
+- Body copy must remain readable at the minimum window size. Ordinary labels are at least 12 px where the layout permits it; captions and metadata are at least 10 px.
 
 ## Regression coverage
 
-Tests must cover the minimum window size, top navigation, all-language level prefixes, absolute companion progress, forecasts for both short and weekly timed limits, reset-credit summaries, numbered representative choices, evolution arrows, provider overflow geometry, animated companion rendering, zero-local-usage limit visibility, selected notification display mode, and translated native menus.
+Tests must cover the minimum window size, top navigation, all-language level prefixes, absolute companion progress, forecasts for both short and weekly timed limits, reset-credit summaries, numbered representative choices, evolution arrows, provider overflow geometry, animated companion rendering, zero-local-usage limit visibility, selected notification display mode, translated native menus, Pokédex detail navigation, capture status copy, settings grouping, tooltip help, and dark-mode control contrast.
 

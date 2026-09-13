@@ -222,6 +222,25 @@ class QmlKeyboardTests(unittest.TestCase):
         self.assertFalse(animation.isVisible())
         self.assertTrue(reveal.isVisible())
 
+    def test_pokedex_card_opens_animated_detail_and_arrows_cross_pages(self):
+        self.root.setProperty("currentPage", 1)
+        QTest.qWait(20)
+        self.activate("View Pokemon 1")
+        self.assertEqual(self.root.property("selectedDexIndex"), 0)
+        detail = self.root.findChild(QObject, "dexDetailPanel")
+        animation = self.root.findChild(QObject, "dexDetailAnimation")
+        self.assertTrue(detail.isVisible())
+        self.assertTrue(animation.property("playing"))
+        self.activate("Next →")
+        self.assertEqual(self.root.property("selectedDexIndex"), 1)
+
+        self.root.setProperty("selectedDexIndex", 23)
+        self.activate("Next →")
+        self.assertEqual(self.root.property("selectedDexIndex"), 24)
+        self.activate("Back to Pokédex")
+        self.assertEqual(self.root.property("selectedDexIndex"), -1)
+        self.assertEqual(self.window.view_model.dexPage, 2)
+
     def test_catch_log_renders_evolution_arrows(self):
         state = GameState(
             mon=MonState(1, [1, 2, 3], 1, 10, "common", False, "Hardy"),

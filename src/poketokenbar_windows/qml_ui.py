@@ -136,6 +136,7 @@ class QmlViewModel(QObject):
             "limits": [],
             "collection": [],
             "dexEntries": [],
+            "dexBrowseEntries": [],
             "dexFilters": [],
             "dexSummary": "0 especies",
             "dexPage": 1,
@@ -252,6 +253,9 @@ class QmlViewModel(QObject):
     )
     dexEntries = Property(
         "QVariantList", lambda self: self._values["dexEntries"], notify=dataChanged
+    )
+    dexBrowseEntries = Property(
+        "QVariantList", lambda self: self._values["dexBrowseEntries"], notify=dataChanged
     )
     dexFilters = Property(
         "QVariantList", lambda self: self._values["dexFilters"], notify=dataChanged
@@ -509,6 +513,11 @@ class QmlViewModel(QObject):
                             species_id, shiny=show_shiny, animated=False
                         )
                     ),
+                    "animatedSprite": _file_url(
+                        self.api.sprite_path(
+                            species_id, shiny=show_shiny, animated=True
+                        )
+                    ),
                 }
             )
         return rows
@@ -548,6 +557,7 @@ class QmlViewModel(QObject):
             summary += f" · {rarity_summary}"
         self._values.update(
             dexEntries=filtered[start : start + page_size],
+            dexBrowseEntries=filtered,
             dexFilters=filters,
             dexSummary=summary,
             dexPage=self._dex_page + 1,
@@ -598,6 +608,16 @@ class QmlViewModel(QObject):
                     "meta": f"{self._tr(catch.rarity)} · {catch.nature} · {catch.caught_at[:10]}",
                     "shiny": bool(catch.is_shiny),
                     "current": is_current,
+                    "description": (
+                        self._tr("fully_evolved", name=self.api.localized_name(display_id, self._language()))
+                        if owned_index == len(path_ids) - 1
+                        else self._tr(
+                            "have_only_stage",
+                            name=self.api.localized_name(display_id, self._language()),
+                            stage=owned_index + 1,
+                            total=len(path_ids),
+                        )
+                    ),
                     "stages": stages,
                     "sprite": _file_url(
                         self.api.sprite_path(

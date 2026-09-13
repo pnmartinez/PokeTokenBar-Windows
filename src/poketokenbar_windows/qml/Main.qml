@@ -11,9 +11,30 @@ Rectangle {
 
     property int currentPage: 0
     property string collectionMode: "dex"
+    property int selectedDexIndex: -1
+    readonly property var selectedDex: selectedDexIndex >= 0 && selectedDexIndex < appModel.dexBrowseEntries.length
+        ? appModel.dexBrowseEntries[selectedDexIndex] : ({})
+    onCollectionModeChanged: if (collectionMode !== "dex") selectedDexIndex = -1
+
+    function openDex(speciesId) {
+        for (let index = 0; index < appModel.dexBrowseEntries.length; ++index) {
+            if (appModel.dexBrowseEntries[index].speciesId === speciesId) {
+                selectedDexIndex = index
+                collectionPage.contentItem.contentY = 0
+                return
+            }
+        }
+    }
+
+    function closeDex() {
+        if (selectedDexIndex >= 0)
+            appModel.moveDexPage(Math.floor(selectedDexIndex / 24) + 1 - appModel.dexPage)
+        selectedDexIndex = -1
+        collectionPage.contentItem.contentY = 0
+    }
     readonly property bool darkMode: appModel.darkMode
     property color textColor: appModel.darkMode ? "#edf2ff" : "#172033"
-    property color mutedColor: appModel.darkMode ? "#9ba9bf" : "#667289"
+    property color mutedColor: appModel.darkMode ? "#b9c7db" : "#5b6a80"
     property color panelColor: appModel.darkMode ? "#18212e" : "#ffffff"
     property color panelAltColor: appModel.darkMode ? "#202b3b" : "#edf3ff"
     property color borderColor: appModel.darkMode ? "#2b394e" : "#dce3ed"
@@ -106,6 +127,160 @@ Rectangle {
         border.width: 1
     }
 
+    component InfoLabel: Text {
+        required property string helpText
+        color: root.textColor
+        font.pixelSize: 12
+        HoverHandler { id: infoHover }
+        ToolTip.visible: infoHover.hovered
+        ToolTip.delay: 550
+        ToolTip.text: helpText
+        Accessible.description: helpText
+    }
+
+    component StyledComboBox: ComboBox {
+        id: styledCombo
+        implicitHeight: 38
+        implicitWidth: 144
+        background: Rectangle {
+            radius: 8
+            color: root.panelAltColor
+            border.color: styledCombo.activeFocus ? root.accentColor : root.borderColor
+            border.width: styledCombo.activeFocus ? 2 : 1
+        }
+        contentItem: Text {
+            leftPadding: 11
+            rightPadding: 24
+            text: styledCombo.displayText
+            color: root.textColor
+            font.pixelSize: 12
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+        }
+        indicator: Canvas {
+            width: 16
+            height: 16
+            x: styledCombo.width - width - 10
+            y: (styledCombo.height - height) / 2
+            property color strokeColor: root.mutedColor
+            onStrokeColorChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                ctx.strokeStyle = strokeColor
+                ctx.lineWidth = 1.8
+                ctx.lineCap = "round"
+                ctx.lineJoin = "round"
+                ctx.beginPath()
+                ctx.moveTo(3, 6)
+                ctx.lineTo(8, 11)
+                ctx.lineTo(13, 6)
+                ctx.stroke()
+            }
+        }
+        delegate: ItemDelegate {
+            required property var modelData
+            width: styledCombo.width
+            contentItem: Text {
+                text: typeof modelData === "object"
+                    ? (modelData.label || modelData.display || "")
+                    : String(modelData)
+                color: root.textColor
+                font.pixelSize: 12
+                verticalAlignment: Text.AlignVCenter
+            }
+            background: Rectangle {
+                color: parent.hovered || parent.highlighted ? root.accentSurface : root.panelColor
+            }
+        }
+        popup: Popup {
+            y: styledCombo.height - 1
+            width: styledCombo.width
+            implicitHeight: Math.min(260, contentItem.implicitHeight + 6)
+            padding: 3
+            contentItem: ListView {
+                clip: true
+                implicitHeight: contentHeight
+                model: styledCombo.popup.visible ? styledCombo.delegateModel : null
+                currentIndex: styledCombo.highlightedIndex
+                boundsBehavior: Flickable.StopAtBounds
+            }
+            background: Rectangle {
+                color: root.panelColor
+                radius: 8
+                border.color: root.borderColor
+            }
+        }
+    }
+
+    component StyledSpinBox: SpinBox {
+        id: styledSpin
+        implicitWidth: 88
+        implicitHeight: 36
+        background: Rectangle {
+            color: root.panelAltColor
+            radius: 8
+            border.color: styledSpin.activeFocus ? root.accentColor : root.borderColor
+            border.width: styledSpin.activeFocus ? 2 : 1
+        }
+        contentItem: Text {
+            text: styledSpin.textFromValue(styledSpin.value, styledSpin.locale)
+            color: root.textColor
+            font.pixelSize: 12
+            leftPadding: 10
+            rightPadding: 30
+            verticalAlignment: Text.AlignVCenter
+        }
+        up.indicator: Item {
+            x: styledSpin.width - 28
+            y: 1
+            width: 27
+            height: 17
+            Canvas {
+                anchors.centerIn: parent
+                width: 12
+                height: 12
+                property color strokeColor: styledSpin.up.pressed ? root.accentColor : root.textColor
+                onStrokeColorChanged: requestPaint()
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.strokeStyle = strokeColor
+                    ctx.lineWidth = 1.5
+                    ctx.beginPath()
+                    ctx.moveTo(2, 6)
+                    ctx.lineTo(10, 6)
+                    ctx.moveTo(6, 2)
+                    ctx.lineTo(6, 10)
+                    ctx.stroke()
+                }
+            }
+        }
+        down.indicator: Item {
+            x: styledSpin.width - 28
+            y: 18
+            width: 27
+            height: 17
+            Canvas {
+                anchors.centerIn: parent
+                width: 12
+                height: 12
+                property color strokeColor: styledSpin.down.pressed ? root.accentColor : root.textColor
+                onStrokeColorChanged: requestPaint()
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.strokeStyle = strokeColor
+                    ctx.lineWidth = 1.5
+                    ctx.beginPath()
+                    ctx.moveTo(2, 6)
+                    ctx.lineTo(10, 6)
+                    ctx.stroke()
+                }
+            }
+        }
+    }
+
     component AppButton: Button {
         id: control
         property string accessibleName: text
@@ -119,7 +294,7 @@ Rectangle {
         contentItem: Text {
             text: control.text
             color: control.enabled ? (control.highlighted ? "#ffffff" : root.textColor) : root.mutedColor
-            font.pixelSize: 12
+            font.pixelSize: 13
             font.weight: Font.Medium
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -202,7 +377,7 @@ Rectangle {
             Text {
                 text: nav.text
                 color: nav.checked ? root.textColor : root.mutedColor
-                font.pixelSize: root.width < 600 ? 10 : 12
+                font.pixelSize: root.width < 600 ? 11 : 12
                 font.weight: nav.checked ? Font.Medium : Font.Normal
                 elide: Text.ElideRight
                 verticalAlignment: Text.AlignVCenter
@@ -222,7 +397,7 @@ Rectangle {
             Text {
                 text: subtitle
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: 12
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
@@ -250,12 +425,12 @@ Rectangle {
         required property string label
         required property string value
         Layout.fillWidth: true
-        Layout.preferredHeight: 52
+        Layout.preferredHeight: 56
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: 9
             spacing: 1
-            Text { text: label; color: root.mutedColor; font.pixelSize: 10 }
+            Text { text: label; color: root.mutedColor; font.pixelSize: 11 }
             Text { text: value; color: root.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
         }
     }
@@ -273,8 +448,8 @@ Rectangle {
             Text { text: "◉"; color: root.accentColor; font.pixelSize: 15 }
             ColumnLayout {
                 spacing: 0
-                Text { text: appModel.strings.wallet; color: root.mutedColor; font.pixelSize: 9 }
-                Text { text: appModel.wallet; color: root.textColor; font.pixelSize: 14; font.weight: Font.DemiBold }
+                Text { text: appModel.strings.wallet; color: root.mutedColor; font.pixelSize: 10 }
+                Text { text: appModel.wallet; color: root.textColor; font.pixelSize: 15; font.weight: Font.DemiBold }
             }
         }
     }
@@ -290,9 +465,13 @@ Rectangle {
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 1
-            Text { text: toggleRow.label; color: root.textColor; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-            Text { visible: toggleRow.detail.length > 0; text: toggleRow.detail; color: root.mutedColor; font.pixelSize: 10; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            Text { text: toggleRow.label; color: root.textColor; font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+
         }
+        HoverHandler { id: toggleHover }
+        ToolTip.visible: (toggleHover.hovered || toggle.activeFocus) && toggleRow.detail.length > 0
+        ToolTip.delay: 550
+        ToolTip.text: toggleRow.detail
         Switch {
             id: toggle
             activeFocusOnTab: true
@@ -336,7 +515,7 @@ Rectangle {
                     contentItem: Text {
                         text: optionButton.modelData.label
                         color: optionButton.checked ? root.textColor : root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 12
                         font.weight: optionButton.checked ? Font.Medium : Font.Normal
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -382,7 +561,7 @@ Rectangle {
                     Text {
                         text: appModel.statusText
                         color: root.mutedColor
-                        font.pixelSize: 9
+                        font.pixelSize: 10
                         elide: Text.ElideRight
                         Layout.maximumWidth: 150
                     }
@@ -420,7 +599,7 @@ Rectangle {
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
-                            Text { text: appModel.strings.home_description; color: root.mutedColor; font.pixelSize: 10; elide: Text.ElideRight; Layout.fillWidth: true }
+                            Text { text: appModel.strings.home_description; color: root.mutedColor; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
                         }
                         AppButton {
                             text: appModel.strings.refresh
@@ -470,15 +649,15 @@ Rectangle {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 3
-                                Text { text: appModel.strings.current_companion; color: root.mutedColor; font.pixelSize: 9; font.letterSpacing: 1 }
+                                Text { text: appModel.strings.current_companion; color: root.mutedColor; font.pixelSize: 10; font.letterSpacing: 1 }
                                 Text { text: appModel.companionName; color: root.textColor; font.pixelSize: 20; font.weight: Font.Medium; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text { text: appModel.companionSubtitle; color: root.mutedColor; font.pixelSize: 10; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text { text: appModel.companionEvolutionText; color: root.mutedColor; font.pixelSize: 10; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text { text: appModel.companionSubtitle; color: root.mutedColor; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text { text: appModel.companionEvolutionText; color: root.mutedColor; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
                                 Item { Layout.fillHeight: true }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.companionProgressText; color: root.textColor; font.pixelSize: 11; Layout.fillWidth: true }
-                                    Text { text: appModel.companionLevelText; color: root.textColor; font.pixelSize: 14; font.weight: Font.Bold }
+                                    Text { text: appModel.companionProgressText; color: root.textColor; font.pixelSize: 12; Layout.fillWidth: true }
+                                    Text { text: appModel.companionLevelText; color: root.textColor; font.pixelSize: 15; font.weight: Font.Bold }
                                 }
                                 ModernProgress { Layout.fillWidth: true; value: appModel.companionProgress }
                             }
@@ -507,7 +686,7 @@ Rectangle {
                             anchors.fill: parent
                             anchors.margins: 8
                             spacing: 4
-                            Text { id: providersTitle; text: appModel.strings.providers; color: root.textColor; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            Text { id: providersTitle; text: appModel.strings.providers; color: root.textColor; font.pixelSize: 13; font.weight: Font.DemiBold }
                             ListView {
                                 id: providersList
                                 objectName: "providersList"
@@ -530,15 +709,15 @@ Rectangle {
                                         anchors.leftMargin: 8
                                         anchors.rightMargin: 8
                                         spacing: 6
-                                        Text { text: modelData.name; color: modelData.error ? root.dangerColor : root.textColor; font.pixelSize: 10; font.weight: Font.Medium; Layout.preferredWidth: 74; elide: Text.ElideRight }
-                                        Text { text: modelData.today + " " + appModel.strings.today_short; color: root.textColor; font.pixelSize: 9 }
-                                        Text { text: modelData.week + " " + appModel.strings.week_short; color: root.mutedColor; font.pixelSize: 9 }
+                                        Text { text: modelData.name; color: modelData.error ? root.dangerColor : root.textColor; font.pixelSize: 11; font.weight: Font.Medium; Layout.preferredWidth: 74; elide: Text.ElideRight }
+                                        Text { text: modelData.today + " " + appModel.strings.today_short; color: root.textColor; font.pixelSize: 10 }
+                                        Text { text: modelData.week + " " + appModel.strings.week_short; color: root.mutedColor; font.pixelSize: 10 }
                                         Item { Layout.fillWidth: true }
-                                        Text { text: modelData.cost; color: root.textColor; font.pixelSize: 9; font.weight: Font.Medium }
+                                        Text { text: modelData.cost; color: root.textColor; font.pixelSize: 10; font.weight: Font.Medium }
                                     }
                                 }
                             }
-                            Text { visible: appModel.providers.length === 0; text: appModel.strings.no_provider_data; color: root.mutedColor; font.pixelSize: 10 }
+                            Text { visible: appModel.providers.length === 0; text: appModel.strings.no_provider_data; color: root.mutedColor; font.pixelSize: 11 }
                         }
                     }
 
@@ -552,7 +731,7 @@ Rectangle {
                             anchors.fill: parent
                             anchors.margins: 8
                             spacing: 5
-                            Text { text: appModel.strings.official_limits; color: root.textColor; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            Text { text: appModel.strings.official_limits; color: root.textColor; font.pixelSize: 13; font.weight: Font.DemiBold }
                             ListView {
                                 id: limitsContent
                                 objectName: "limitsContent"
@@ -581,18 +760,18 @@ Rectangle {
                                                     ? modelData.provider + " · " + modelData.label
                                                     : modelData.provider + (modelData.plan.length ? " · " + modelData.plan : "") + " · " + modelData.label
                                                 color: modelData.urgency === "critical" ? root.dangerColor : (modelData.urgency === "warning" ? root.warningColor : root.textColor)
-                                                font.pixelSize: 10
+                                                font.pixelSize: 11
                                                 font.weight: modelData.kind === "credit" ? Font.DemiBold : Font.Medium
                                                 elide: Text.ElideRight
                                                 Layout.fillWidth: true
                                             }
-                                            Text { visible: modelData.kind !== "credit"; text: modelData.percentText; color: root.textColor; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                            Text { visible: modelData.kind !== "credit"; text: modelData.percentText; color: root.textColor; font.pixelSize: 11; font.weight: Font.DemiBold }
                                         }
                                         RowLayout {
                                             visible: modelData.kind === "window"
                                             Layout.fillWidth: true
-                                            Text { text: modelData.reset; color: root.mutedColor; font.pixelSize: 9; Layout.fillWidth: true }
-                                            Text { visible: modelData.forecast.length > 0; text: appModel.strings.forecast + ": " + modelData.forecast; color: root.mutedColor; font.pixelSize: 9; elide: Text.ElideRight; Layout.maximumWidth: 230 }
+                                            Text { text: modelData.reset; color: root.mutedColor; font.pixelSize: 10; Layout.fillWidth: true }
+                                            Text { visible: modelData.forecast.length > 0; text: appModel.strings.forecast + ": " + modelData.forecast; color: root.mutedColor; font.pixelSize: 10; elide: Text.ElideRight; Layout.maximumWidth: 230 }
                                         }
                                         ModernProgress {
                                             visible: modelData.kind === "window"
@@ -603,7 +782,7 @@ Rectangle {
                                     }
                                 }
                             }
-                            Text { visible: appModel.limits.length === 0; text: appModel.strings.no_limit_data; color: root.mutedColor; font.pixelSize: 10 }
+                            Text { visible: appModel.limits.length === 0; text: appModel.strings.no_limit_data; color: root.mutedColor; font.pixelSize: 11 }
                         }
                     }
                 }
@@ -637,14 +816,14 @@ Rectangle {
                         }
                         Item { Layout.fillWidth: true }
                         Text {
-                            visible: root.collectionMode === "dex"
+                            visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
                             text: root.format(appModel.strings.page, {page: appModel.dexPage, count: appModel.dexPageCount})
                             color: root.mutedColor
-                            font.pixelSize: 10
+                            font.pixelSize: 11
                         }
                     }
                     Flow {
-                        visible: root.collectionMode === "dex"
+                        visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
                         Layout.fillWidth: true
                         Layout.leftMargin: 14
                         Layout.rightMargin: 14
@@ -661,14 +840,14 @@ Rectangle {
                         }
                     }
                     Text {
-                        visible: root.collectionMode === "dex"
+                        visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
                         Layout.leftMargin: 14
                         text: appModel.dexSummary
                         color: root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
                     GridLayout {
-                        visible: root.collectionMode === "dex"
+                        visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
                         Layout.fillWidth: true
                         Layout.leftMargin: 14
                         Layout.rightMargin: 14
@@ -680,19 +859,29 @@ Rectangle {
                             Panel {
                                 required property var modelData
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 132
+                                Layout.preferredHeight: modelData.hasShiny ? 210 : 174
+                                Button {
+                                    anchors.fill: parent
+                                    activeFocusOnTab: true
+                                    Accessible.name: root.format(appModel.strings.dex_open, {name: modelData.name})
+                                    Accessible.role: Accessible.Button
+                                    onClicked: root.openDex(modelData.speciesId)
+                                    background: Item { }
+                                    contentItem: Item { }
+                                    FocusFrame { }
+                                }
                                 ColumnLayout {
                                     anchors.fill: parent
                                     anchors.margins: 8
                                     spacing: 2
-                                    Image { source: modelData.sprite; Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 66; Layout.preferredHeight: 66; fillMode: Image.PreserveAspectFit; smooth: false }
+                                    Image { source: modelData.sprite; Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 108; Layout.preferredHeight: 108; fillMode: Image.PreserveAspectFit; smooth: false }
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        Text { text: modelData.number; color: root.mutedColor; font.pixelSize: 9 }
+                                        Text { text: modelData.number; color: root.mutedColor; font.pixelSize: 10 }
                                         Item { Layout.fillWidth: true }
-                                        Text { visible: modelData.showShiny; text: "✨"; font.pixelSize: 10 }
+                                        Text { visible: modelData.showShiny; text: "✨"; font.pixelSize: 11 }
                                     }
-                                    Text { text: modelData.name; color: root.textColor; font.pixelSize: 11; font.weight: Font.Medium; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    Text { text: modelData.name; color: root.textColor; font.pixelSize: 12; font.weight: Font.Medium; elide: Text.ElideRight; Layout.fillWidth: true }
                                     AppButton {
                                         Layout.fillWidth: true
                                         visible: modelData.hasShiny
@@ -704,9 +893,9 @@ Rectangle {
                             }
                         }
                     }
-                    Text { visible: root.collectionMode === "dex" && appModel.dexEntries.length === 0; Layout.leftMargin: 14; text: appModel.strings.empty_pokedex; color: root.mutedColor; font.pixelSize: 11 }
+                    Text { visible: root.collectionMode === "dex" && root.selectedDexIndex < 0 && appModel.dexEntries.length === 0; Layout.leftMargin: 14; text: appModel.strings.empty_pokedex; color: root.mutedColor; font.pixelSize: 12 }
                     RowLayout {
-                        visible: root.collectionMode === "dex"
+                        visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
                         Layout.fillWidth: true
                         Layout.leftMargin: 14
                         Layout.rightMargin: 14
@@ -714,7 +903,92 @@ Rectangle {
                         Item { Layout.fillWidth: true }
                         AppButton { text: appModel.strings.next; enabled: appModel.dexPage < appModel.dexPageCount; onClicked: appModel.moveDexPage(1) }
                     }
-                    Text { visible: root.collectionMode === "catches" && appModel.catches.length === 0; Layout.leftMargin: 14; text: appModel.strings.empty_catches; color: root.mutedColor; font.pixelSize: 11 }
+                    Panel {
+                        objectName: "dexDetailPanel"
+                        visible: root.collectionMode === "dex" && root.selectedDexIndex >= 0
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 14
+                        Layout.rightMargin: 14
+                        Layout.preferredHeight: 342
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 16
+                            spacing: 5
+                            RowLayout {
+                                Layout.fillWidth: true
+                                AppButton {
+                                    text: appModel.strings.dex_back
+                                    onClicked: root.closeDex()
+                                }
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    text: root.format(appModel.strings.dex_position, {
+                                        position: root.selectedDexIndex + 1,
+                                        count: appModel.dexBrowseEntries.length
+                                    })
+                                    color: root.mutedColor
+                                    font.pixelSize: 13
+                                }
+                            }
+                            AnimatedImage {
+                                objectName: "dexDetailAnimation"
+                                Layout.alignment: Qt.AlignHCenter
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 216
+                                source: root.selectedDex.animatedSprite || root.selectedDex.sprite || ""
+                                fillMode: Image.PreserveAspectFit
+                                smooth: false
+                                playing: visible && root.currentPage === 1
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text {
+                                    text: (root.selectedDex.showShiny ? "✨ " : "") +
+                                          (root.selectedDex.name || "") + "  " +
+                                          (root.selectedDex.number || "")
+                                    color: root.textColor
+                                    font.pixelSize: 19
+                                    font.weight: Font.DemiBold
+                                    Layout.fillWidth: true
+                                }
+                                AppButton {
+                                    visible: !!root.selectedDex.hasShiny
+                                    text: root.selectedDex.showShiny ? "Normal" : "Shiny"
+                                    onClicked: appModel.toggleDexVariant(root.selectedDex.speciesId)
+                                }
+                            }
+                            Text {
+                                text: appModel.strings[root.selectedDex.rarity] || ""
+                                color: root.mutedColor
+                                font.pixelSize: 13
+                            }
+                        }
+                    }
+                    RowLayout {
+                        objectName: "dexDetailNavigation"
+                        visible: root.collectionMode === "dex" && root.selectedDexIndex >= 0
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 14
+                        Layout.rightMargin: 14
+                        AppButton {
+                            text: appModel.strings.previous
+                            enabled: root.selectedDexIndex > 0
+                            onClicked: {
+                                root.selectedDexIndex--
+                                collectionPage.contentItem.contentY = 0
+                            }
+                        }
+                        Item { Layout.fillWidth: true }
+                        AppButton {
+                            text: appModel.strings.next
+                            enabled: root.selectedDexIndex < appModel.dexBrowseEntries.length - 1
+                            onClicked: {
+                                root.selectedDexIndex++
+                                collectionPage.contentItem.contentY = 0
+                            }
+                        }
+                    }
+                    Text { visible: root.collectionMode === "catches" && appModel.catches.length === 0; Layout.leftMargin: 14; text: appModel.strings.empty_catches; color: root.mutedColor; font.pixelSize: 12 }
                     Repeater {
                         model: root.collectionMode === "catches" ? appModel.catches : []
                         Panel {
@@ -722,7 +996,7 @@ Rectangle {
                             Layout.fillWidth: true
                             Layout.leftMargin: 14
                             Layout.rightMargin: 14
-                            Layout.preferredHeight: 180
+                            Layout.preferredHeight: 230
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: 10
@@ -735,8 +1009,8 @@ Rectangle {
                                         anchors.left: parent.left
                                         anchors.top: parent.top
                                         spacing: 2
-                                        Text { text: (modelData.shiny ? "✨ " : "") + modelData.name + "  " + modelData.number; color: root.textColor; font.pixelSize: 13; font.weight: Font.Medium }
-                                        Text { text: modelData.meta; color: root.mutedColor; font.pixelSize: 9 }
+                                        Text { text: (modelData.shiny ? "✨ " : "") + modelData.name + "  " + modelData.number; color: root.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Text { text: modelData.meta; color: root.mutedColor; font.pixelSize: 10 }
                                     }
                                     Text {
                                         objectName: "raisingBadge"
@@ -745,9 +1019,16 @@ Rectangle {
                                         visible: modelData.current
                                         text: appModel.strings.raising
                                         color: root.accentColor
-                                        font.pixelSize: 9
+                                        font.pixelSize: 10
                                         font.weight: Font.Medium
                                     }
+                                }
+                                Text {
+                                    text: modelData.description
+                                    color: root.mutedColor
+                                    font.pixelSize: 13
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
                                 }
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -763,9 +1044,9 @@ Rectangle {
                                             ColumnLayout {
                                                 Layout.fillWidth: true
                                                 spacing: 1
-                                                Image { source: modelData.sprite; opacity: modelData.owned ? 1 : 0.3; Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 76; Layout.preferredHeight: 76; fillMode: Image.PreserveAspectFit; smooth: false }
-                                                Text { text: modelData.name; color: modelData.owned ? root.textColor : root.mutedColor; font.pixelSize: 10; elide: Text.ElideRight; horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true }
-                                                Text { text: modelData.status; color: modelData.current ? root.accentColor : root.mutedColor; font.pixelSize: 9; horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true }
+                                                Image { source: modelData.sprite; opacity: modelData.owned ? 1 : 0.3; Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 104; Layout.preferredHeight: 104; fillMode: Image.PreserveAspectFit; smooth: false }
+                                                Text { text: modelData.name; color: modelData.owned ? root.textColor : root.mutedColor; font.pixelSize: 11; elide: Text.ElideRight; horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true }
+                                                Text { text: modelData.status; color: modelData.current ? root.accentColor : root.mutedColor; font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true }
                                             }
                                         }
                                     }
@@ -808,7 +1089,7 @@ Rectangle {
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     Text { text: appModel.strings.rare_candy; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
-                                    Text { text: root.format(appModel.strings.available_count, {count: appModel.rareCandyCount}); color: root.mutedColor; font.pixelSize: 11 }
+                                    Text { text: root.format(appModel.strings.available_count, {count: appModel.rareCandyCount}); color: root.mutedColor; font.pixelSize: 12 }
                                     AppButton { text: appModel.strings.use_on_companion; enabled: appModel.rareCandyCount > 0; onClicked: appModel.useItem("rare_candy") }
                                 }
                             }
@@ -822,7 +1103,7 @@ Rectangle {
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     Text { text: appModel.strings.mint; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
-                                    Text { text: root.format(appModel.strings.available_count, {count: appModel.mintCount}); color: root.mutedColor; font.pixelSize: 11 }
+                                    Text { text: root.format(appModel.strings.available_count, {count: appModel.mintCount}); color: root.mutedColor; font.pixelSize: 12 }
                                     AppButton { text: appModel.strings.change_nature; enabled: appModel.mintCount > 0; onClicked: appModel.useItem("mint") }
                                 }
                             }
@@ -836,8 +1117,8 @@ Rectangle {
                                 Text { text: "✨"; font.pixelSize: 30 }
                                 ColumnLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.shiny_charm; color: root.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                    Text { text: appModel.shinyCharmActive ? appModel.strings.charm_active : appModel.strings.charm_inactive; color: appModel.shinyCharmActive ? root.successColor : root.mutedColor; font.pixelSize: 10; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                                    Text { text: appModel.strings.shiny_charm; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
+                                    Text { text: appModel.shinyCharmActive ? appModel.strings.charm_active : appModel.strings.charm_inactive; color: appModel.shinyCharmActive ? root.successColor : root.mutedColor; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                                 }
                             }
                         }
@@ -878,8 +1159,8 @@ Rectangle {
                                     anchors.margins: 12
                                     spacing: 4
                                     Text { text: modelData.icon; font.pixelSize: 30 }
-                                    Text { text: modelData.title; color: root.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                    Text { text: modelData.subtitle; color: root.mutedColor; font.pixelSize: 10; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                                    Text { text: modelData.title; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
+                                    Text { text: modelData.subtitle; color: root.mutedColor; font.pixelSize: 11; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                                     Item { Layout.fillHeight: true }
                                     AppButton {
                                         Layout.fillWidth: true
@@ -921,34 +1202,47 @@ Rectangle {
                         rowSpacing: 8
 
                         Panel {
+                            objectName: "generalSettingsPanel"
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 286
+                            Layout.preferredHeight: 182
                             ColumnLayout {
                                 anchors.fill: parent; anchors.margins: 12; spacing: 8
-                                Text { text: appModel.strings.general; color: root.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                Text { text: appModel.strings.general; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.refresh_interval; color: root.textColor; font.pixelSize: 11; Layout.fillWidth: true }
-                                    ComboBox {
+                                    InfoLabel { text: appModel.strings.refresh_interval; helpText: appModel.strings.refresh_help; Layout.fillWidth: true }
+                                    StyledComboBox {
                                         objectName: "refreshIntervalCombo"
                                         model: [1, 2, 5, 10, 15]
                                         activeFocusOnTab: true
                                         Accessible.name: appModel.strings.refresh_interval
                                         FocusFrame { }
                                         currentIndex: Math.max(0, model.indexOf(appModel.refreshMinutes))
-                                        delegate: ItemDelegate { required property var modelData; width: parent ? parent.width : 100; text: root.format(appModel.strings.minutes, {count: modelData}) }
+                                        delegate: ItemDelegate {
+                                            required property var modelData
+                                            width: parent ? parent.width : 100
+                                            contentItem: Text {
+                                                text: root.format(appModel.strings.minutes, {count: modelData})
+                                                color: root.textColor
+                                                font.pixelSize: 12
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: Rectangle {
+                                                color: parent.hovered || parent.highlighted ? root.accentSurface : root.panelColor
+                                            }
+                                        }
                                         contentItem: Text { text: root.format(appModel.strings.minutes, {count: parent.currentText}); color: root.textColor; verticalAlignment: Text.AlignVCenter; leftPadding: 8 }
                                         onActivated: appModel.setRefreshMinutes(model[currentIndex])
                                     }
                                 }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    ColumnLayout {
+                                    InfoLabel {
+                                        text: appModel.strings.language
+                                        helpText: appModel.strings.language_help
                                         Layout.fillWidth: true
-                                        Text { text: appModel.strings.language; color: root.textColor; font.pixelSize: 11 }
-                                        Text { text: appModel.strings.language_help; color: root.mutedColor; font.pixelSize: 9; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                                     }
-                                    ComboBox {
+                                    StyledComboBox {
                                         id: languageCombo
                                         objectName: "languageCombo"
                                         activeFocusOnTab: true
@@ -960,18 +1254,31 @@ Rectangle {
                                         onActivated: appModel.setLanguage(model[currentIndex].key)
                                     }
                                 }
+                                ToggleRow { label: appModel.strings.start_windows; detail: appModel.strings.start_windows_help; checked: appModel.autostart; onChanged: value => appModel.setAutostart(value) }
+                            }
+                        }
+
+                        Panel {
+                            objectName: "desktopPetPanel"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 258
+                            ColumnLayout {
+                                anchors.fill: parent; anchors.margins: 12; spacing: 7
+                                Text { text: appModel.strings.desktop_pet; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 3
-                                    Text { text: appModel.strings.desktop_representative; color: root.textColor; font.pixelSize: 11 }
-                                    Text { text: appModel.strings.representative_help; color: root.mutedColor; font.pixelSize: 9; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                                    ComboBox {
+                                    InfoLabel { text: appModel.strings.desktop_representative; helpText: appModel.strings.representative_help }
+                                    StyledComboBox {
                                         id: representativeCombo
                                         objectName: "representativeCombo"
                                         Layout.fillWidth: true
                                         activeFocusOnTab: true
                                         Accessible.name: appModel.strings.desktop_representative
                                         Accessible.description: appModel.strings.representative_help
+                                        ToolTip.visible: hovered || activeFocus
+                                        ToolTip.delay: 550
+                                        ToolTip.text: appModel.strings.representative_help
                                         FocusFrame { }
                                         model: appModel.collection
                                         textRole: "display"
@@ -983,24 +1290,14 @@ Rectangle {
                                         onActivated: appModel.chooseRepresentative(currentIndex)
                                     }
                                 }
-                                ToggleRow { label: appModel.strings.start_windows; checked: appModel.autostart; onChanged: value => appModel.setAutostart(value) }
-                            }
-                        }
-
-                        Panel {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 178
-                            ColumnLayout {
-                                anchors.fill: parent; anchors.margins: 12; spacing: 7
-                                Text { text: appModel.strings.desktop_pet; color: root.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                ToggleRow { label: appModel.strings.show_floating; checked: appModel.petEnabled; onChanged: value => appModel.setPetEnabled(value) }
+                                ToggleRow { label: appModel.strings.show_floating; detail: appModel.strings.show_floating_help; checked: appModel.petEnabled; onChanged: value => appModel.setPetEnabled(value) }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.size; color: root.textColor; font.pixelSize: 11 }
+                                    InfoLabel { text: appModel.strings.size; helpText: appModel.strings.pet_size_help }
                                     Slider { objectName: "petSizeSlider"; Layout.fillWidth: true; from: 48; to: 192; stepSize: 8; value: appModel.petSize; enabled: appModel.petEnabled; activeFocusOnTab: true; Accessible.name: appModel.strings.pet_size; onMoved: appModel.setPetSize(value); FocusFrame { } }
-                                    Text { text: appModel.petSize + " px"; color: root.mutedColor; font.pixelSize: 10 }
+                                    Text { text: appModel.petSize + " px"; color: root.mutedColor; font.pixelSize: 11 }
                                 }
-                                ToggleRow { label: appModel.strings.usage_bubbles; checked: appModel.petAlerts; onChanged: value => appModel.setPreference("petAlerts", value) }
+                                ToggleRow { label: appModel.strings.usage_bubbles; detail: appModel.strings.usage_bubbles_help; checked: appModel.petAlerts; onChanged: value => appModel.setPreference("petAlerts", value) }
                             }
                         }
 
@@ -1010,10 +1307,10 @@ Rectangle {
                             Layout.preferredHeight: 374
                             ColumnLayout {
                                 anchors.fill: parent; anchors.margins: 12; spacing: 7
-                                Text { text: appModel.strings.limits_alerts; color: root.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                Text { text: appModel.strings.limits_alerts; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.show_quota; color: root.textColor; font.pixelSize: 11; Layout.fillWidth: true }
+                                    InfoLabel { text: appModel.strings.show_quota; helpText: appModel.strings.quota_help; Layout.fillWidth: true }
                                     SegmentedControl {
                                         objectName: "limitDisplayControl"
                                         options: [{label: appModel.strings.used, value: "used"}, {label: appModel.strings.remaining, value: "remaining"}]
@@ -1024,7 +1321,7 @@ Rectangle {
                                 }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.reset_format; color: root.textColor; font.pixelSize: 11; Layout.fillWidth: true }
+                                    InfoLabel { text: appModel.strings.reset_format; helpText: appModel.strings.reset_format_help; Layout.fillWidth: true }
                                     SegmentedControl {
                                         objectName: "limitTimeControl"
                                         options: [{label: appModel.strings.time, value: "remaining"}, {label: appModel.strings.date, value: "datetime"}]
@@ -1033,18 +1330,18 @@ Rectangle {
                                         onSelected: value => appModel.setPreference("limitTimeMode", value)
                                     }
                                 }
-                                ToggleRow { label: appModel.strings.forecast_timed; checked: appModel.forecastEnabled; onChanged: value => appModel.setPreference("forecastEnabled", value) }
-                                ToggleRow { label: appModel.strings.limit_notifications; checked: appModel.limitNotifications; onChanged: value => appModel.setPreference("limitNotifications", value) }
-                                ToggleRow { label: appModel.strings.pokemon_notifications; checked: appModel.companionNotifications; onChanged: value => appModel.setPreference("companionNotifications", value) }
+                                ToggleRow { label: appModel.strings.forecast_timed; detail: appModel.strings.forecast_help; checked: appModel.forecastEnabled; onChanged: value => appModel.setPreference("forecastEnabled", value) }
+                                ToggleRow { label: appModel.strings.limit_notifications; detail: appModel.strings.limit_notifications_help; checked: appModel.limitNotifications; onChanged: value => appModel.setPreference("limitNotifications", value) }
+                                ToggleRow { label: appModel.strings.pokemon_notifications; detail: appModel.strings.pokemon_notifications_help; checked: appModel.companionNotifications; onChanged: value => appModel.setPreference("companionNotifications", value) }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.warning; color: root.textColor; font.pixelSize: 11; Layout.fillWidth: true }
-                                    SpinBox { objectName: "warningThresholdSpin"; from: 50; to: 95; stepSize: 5; value: appModel.warningThreshold; editable: false; activeFocusOnTab: true; Accessible.name: appModel.strings.warning_threshold; textFromValue: value => value + "%"; valueFromText: text => parseInt(text); onValueModified: appModel.setPreference("warningThreshold", value); contentItem.activeFocusOnTab: false; FocusFrame { } }
+                                    InfoLabel { text: appModel.strings.warning; helpText: appModel.strings.warning_help; Layout.fillWidth: true }
+                                    StyledSpinBox { objectName: "warningThresholdSpin"; from: 50; to: 95; stepSize: 5; value: appModel.warningThreshold; editable: false; activeFocusOnTab: true; Accessible.name: appModel.strings.warning_threshold; textFromValue: value => value + "%"; valueFromText: text => parseInt(text); onValueModified: appModel.setPreference("warningThreshold", value); contentItem.activeFocusOnTab: false; FocusFrame { } }
                                 }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.critical; color: root.textColor; font.pixelSize: 11; Layout.fillWidth: true }
-                                    SpinBox { objectName: "criticalThresholdSpin"; from: 80; to: 100; stepSize: 5; value: appModel.criticalThreshold; editable: false; activeFocusOnTab: true; Accessible.name: appModel.strings.critical_threshold; textFromValue: value => value + "%"; valueFromText: text => parseInt(text); onValueModified: appModel.setPreference("criticalThreshold", value); contentItem.activeFocusOnTab: false; FocusFrame { } }
+                                    InfoLabel { text: appModel.strings.critical; helpText: appModel.strings.critical_help; Layout.fillWidth: true }
+                                    StyledSpinBox { objectName: "criticalThresholdSpin"; from: 80; to: 100; stepSize: 5; value: appModel.criticalThreshold; editable: false; activeFocusOnTab: true; Accessible.name: appModel.strings.critical_threshold; textFromValue: value => value + "%"; valueFromText: text => parseInt(text); onValueModified: appModel.setPreference("criticalThreshold", value); contentItem.activeFocusOnTab: false; FocusFrame { } }
                                 }
                             }
                         }
@@ -1054,11 +1351,11 @@ Rectangle {
                             Layout.preferredHeight: 260
                             ColumnLayout {
                                 anchors.fill: parent; anchors.margins: 12; spacing: 7
-                                Text { text: appModel.strings.appearance_data; color: root.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                Text { text: appModel.strings.appearance_data; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.theme; color: root.textColor; font.pixelSize: 11; Layout.fillWidth: true }
-                                    ComboBox {
+                                    InfoLabel { text: appModel.strings.theme; helpText: appModel.strings.theme_help; Layout.fillWidth: true }
+                                    StyledComboBox {
                                         objectName: "themeCombo"
                                         activeFocusOnTab: true
                                         Accessible.name: appModel.strings.interface_theme
@@ -1068,13 +1365,13 @@ Rectangle {
                                         onActivated: appModel.setPreference("theme", ["system", "light", "dark"][currentIndex])
                                     }
                                 }
-                                ToggleRow { label: appModel.strings.tray_today; checked: appModel.trayShowTokens; onChanged: value => appModel.setPreference("trayShowTokens", value) }
-                                ToggleRow { label: appModel.strings.tray_cost; checked: appModel.trayShowCost; onChanged: value => appModel.setPreference("trayShowCost", value) }
-                                ToggleRow { objectName: "trayLimitToggle"; label: appModel.strings.tray_limit; checked: appModel.trayShowLimit; onChanged: value => appModel.setPreference("trayShowLimit", value) }
+                                ToggleRow { label: appModel.strings.tray_today; detail: appModel.strings.tray_today_help; checked: appModel.trayShowTokens; onChanged: value => appModel.setPreference("trayShowTokens", value) }
+                                ToggleRow { label: appModel.strings.tray_cost; detail: appModel.strings.tray_cost_help; checked: appModel.trayShowCost; onChanged: value => appModel.setPreference("trayShowCost", value) }
+                                ToggleRow { objectName: "trayLimitToggle"; label: appModel.strings.tray_limit; detail: appModel.strings.tray_limit_help; checked: appModel.trayShowLimit; onChanged: value => appModel.setPreference("trayShowLimit", value) }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    AppButton { text: appModel.strings.export_backup; onClicked: appModel.requestExport() }
-                                    AppButton { text: appModel.strings.import_backup; onClicked: appModel.requestImport() }
+                                    AppButton { text: appModel.strings.export_backup; ToolTip.visible: hovered; ToolTip.text: appModel.strings.backup_help; onClicked: appModel.requestExport() }
+                                    AppButton { text: appModel.strings.import_backup; ToolTip.visible: hovered; ToolTip.text: appModel.strings.backup_help; onClicked: appModel.requestImport() }
                                 }
                             }
                         }
@@ -1095,7 +1392,7 @@ Rectangle {
         radius: 9
         color: root.darkMode ? "#dce7ff" : "#21365e"
         z: 30
-        Text { id: feedbackText; anchors.centerIn: parent; text: appModel.feedbackText; color: root.darkMode ? "#17233c" : "#ffffff"; font.pixelSize: 11 }
+        Text { id: feedbackText; anchors.centerIn: parent; text: appModel.feedbackText; color: root.darkMode ? "#17233c" : "#ffffff"; font.pixelSize: 12 }
     }
 
     Rectangle {
@@ -1109,6 +1406,6 @@ Rectangle {
         color: appModel.toastShiny ? (root.darkMode ? "#4b3e17" : "#fff2bd") : root.panelColor
         border.color: appModel.toastShiny ? root.warningColor : root.borderColor
         z: 40
-        Text { id: toastText; anchors.centerIn: parent; text: (appModel.toastShiny ? "✨  " : "") + appModel.toastText; color: root.textColor; font.pixelSize: 12; font.weight: Font.Medium }
+        Text { id: toastText; anchors.centerIn: parent; text: (appModel.toastShiny ? "✨  " : "") + appModel.toastText; color: root.textColor; font.pixelSize: 13; font.weight: Font.Medium }
     }
 }

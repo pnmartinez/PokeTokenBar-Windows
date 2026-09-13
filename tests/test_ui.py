@@ -135,6 +135,17 @@ class UITests(unittest.TestCase):
         self.assertIsNotNone(pet_size)
         self.assertEqual(pet_size.property("from"), 48.0)
 
+        representative = root.findChild(QObject, "representativeCombo")
+        desktop_panel = root.findChild(QObject, "desktopPetPanel")
+        general_panel = root.findChild(QObject, "generalSettingsPanel")
+        ancestors = []
+        parent = representative.parent()
+        while parent is not None:
+            ancestors.append(parent)
+            parent = parent.parent()
+        self.assertIn(desktop_panel, ancestors)
+        self.assertNotIn(general_panel, ancestors)
+
     def test_qml_view_model_renders_usage_limits_and_companion_progress(self):
         state = GameState(egg_usage=EGG_HATCH_THRESHOLD // 2)
         model = QmlViewModel(state, self.settings, FakeUIAPI())
@@ -327,6 +338,10 @@ class UITests(unittest.TestCase):
             ["Previous form", "You have this", "Not owned"],
         )
         self.assertEqual(model.catches[0]["stages"][2]["name"], "???")
+        self.assertEqual(
+            model.catches[0]["description"],
+            "You have Ivysaur only · stage 2 of 3",
+        )
 
     def test_legacy_desktop_pet_preferences_migrate_without_overwriting_current_values(self):
         self.settings.setValue("pet_visible", True)
