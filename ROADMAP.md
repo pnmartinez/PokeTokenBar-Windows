@@ -4,7 +4,7 @@ Este documento prioriza las mejoras que hacen PokeTokenBar para Windows más agr
 
 ## Referencia de la auditoría
 
-- Windows: `3ae423c` (`master`, migración de la ventana principal a Qt Quick/QML).
+- Base de la auditoría Windows: `3ae423c` (`master`, migración de la ventana principal a Qt Quick/QML). La tabla siguiente refleja el cierre de P0 en la PR #7, no solo aquella base.
 - Upstream fijado anteriormente: `37763d3c367068492c18f6e51b45977c2d27f6d5` (después de `v2.5.3`).
 - Upstream revisado ahora: `5f1ef524a104dceee681a21c13a92a7404c6f176`, 2026-09-03.
 - Fuente: [chattymin/PokeTokenBar](https://github.com/chattymin/PokeTokenBar).
@@ -86,19 +86,20 @@ Claude, Codex, Gemini, Antigravity, OpenCode, Hermes, Cursor, Grok, GitHub Copil
 | Área | Estado | Situación real en QML |
 | --- | --- | --- |
 | Ventana moderna y navegación | **Hecho** | QML responsive con Inicio, Colección, Bolsa, Tienda y Ajustes; tema claro, oscuro o del sistema. |
-| Bandeja del sistema | **Parcial / diferencia intencionada** | Muestra el representante como icono y el resumen en el tooltip; Windows no replica el texto y la animación incrustados en la barra de menús de macOS. QML permite ocultar tokens y coste, pero no el límite. |
-| Mascota flotante | **Parcial** | Arrastre, posición persistente, clic, menú contextual, alertas y permanencia en pantallas válidas funcionan. El hover incluye el porcentaje hasta la siguiente evolución. QML solo permite 64–192 px aunque el backend admite 48–192 px. |
+| Bandeja del sistema | **Parcial / diferencia intencionada** | Muestra el representante como icono y el resumen en el tooltip; Windows no replica el texto y la animación incrustados en la barra de menús de macOS. QML permite mostrar u ocultar tokens, coste y límite. |
+| Mascota flotante | **Hecho** | Arrastre, posición persistente, clic, menú contextual, alertas y permanencia en pantallas válidas funcionan. El hover incluye el progreso y el tamaño en QML cubre 48–192 px. |
 | Calidad de animación | **Pendiente** | Las animaciones existen, pero no hay perfiles de ahorro/equilibrado/fluido. |
 | Juego y celebraciones | **Hecho** | Huevo, evoluciones, graduación, rareza, naturaleza, Shiny, recompensas y avisos breves funcionan. |
 | Inicio: compañero y resumen | **Hecho** | Compañero, progreso, cuatro métricas, límites y lista de proveedores tienen tratamiento visual QML. |
 | Detalle de consumo | **Parcial** | QML muestra hoy y semana por proveedor. No ofrece pestañas, mes/coste en el detalle, tipos de token ni desglose por modelo. |
-| Límites oficiales | **Parcial** | Claude y Codex, barras, reinicios y usado/restante funcionan. El backend calcula previsiones y Luna Reserve, pero QML no muestra la previsión, no muestra plan/cuenta aunque recibe `plan`, no ofrece refresco manual ni estados de autenticación claros y limita la vista a tres filas. |
+| Límites oficiales | **Parcial** | Claude y Codex, barras, reinicios, usado/restante, plan disponible y todas las ventanas recibidas funcionan, con refresco global desde Inicio. Faltan previsiones, filas de créditos de reinicio, estado de Luna cuando no llega en la respuesta y estados de autenticación/cuenta claros. |
 | Estados del servicio | **Pendiente** | No hay banners de incidencias del proveedor. |
-| Pokédex y capturas | **Parcial** | QML muestra una cuadrícula y el historial seguido en la misma página. La paginación, vistas separadas, filtros/contadores, alternancia normal/Shiny y línea evolutiva solo existen en Widgets o faltan. |
+| Pokédex y capturas | **Hecho** | QML separa Pokédex y capturas, pagina de 24 en 24 y ofrece filtros/contadores por rareza, alternancia normal/Shiny obtenida y etapas de evolución con estados actual/obtenida/futura. Las futuras se muestran atenuadas y sin nombre. |
 | Pokémon representante | **Hecho** | Se puede elegir una captura o volver a seguir al compañero activo; se refleja en bandeja y mascota. |
 | Bolsa y tienda | **Parcial** | Las operaciones y tarjetas funcionan. Las confirmaciones siguen usando diálogos Widgets; faltan motivos visibles en botones desactivados y el flujo QML no replica toda la respuesta contextual de upstream. |
 | Ajustes generales | **Hecho** | Intervalo, nombres Pokémon, inicio con Windows, mascota, avisos, usado/restante, previsión, notificaciones, tema e importar/exportar. |
-| Ajustes avanzados ya soportados por backend | **Parcial** | QML no expone el límite en bandeja, umbrales warning/critical ni tiempo restante/fecha y hora. Su slider empieza en 64 px aunque el backend admite 48 px. |
+| Ajustes avanzados ya soportados por backend | **Hecho** | QML expone límite en bandeja, umbrales warning/critical validados, tiempo restante/fecha y hora y mascota 48–192 px. |
+| Teclado y accesibilidad de controles | **Hecho** | Tab/Shift+Tab recorren las cinco páginas, con nombres accesibles, foco visible y desplazamiento automático al control enfocado. Probados temas claro/oscuro y ventana mínima/normal. |
 | Idiomas | **Parcial** | Solo se traducen nombres Pokémon. La interfaz QML está escrita en español y no usa un catálogo de traducciones. |
 | Carpetas de escaneo adicionales | **Pendiente** | No hay editor por proveedor ni vista previa de coincidencias. |
 | Cuenta/sesión de Claude | **Pendiente** | No hay configuración visible de clave de sesión ni selector de organización. |
@@ -118,8 +119,8 @@ Claude, Codex, Gemini, Antigravity, OpenCode, Hermes, Cursor, Grok, GitHub Copil
 - [x] Sustituir el `ComboBox` usado/restante por un control segmentado claro y compacto.
 - [x] Separar Pokédex y registro de capturas dentro de Colección.
 - [x] Recuperar paginación, contadores/filtros, alternancia normal/Shiny y línea evolutiva en QML.
-- [ ] Añadir foco visible, orden de tabulación y nombres accesibles a los controles QML; verificar teclado completo.
-- [ ] Corregir `README.md` para no presentar como accesibles en QML funciones que solo conserva la vista Widgets antigua.
+- [x] Añadir foco visible, orden de tabulación y nombres accesibles a los controles QML; verificar teclado completo.
+- [x] Corregir `README.md` para no presentar como accesibles en QML funciones que solo conserva la vista Widgets antigua.
 
 ### P1 — mejoras de UI/UX con mayor impacto
 
@@ -127,7 +128,7 @@ Claude, Codex, Gemini, Antigravity, OpenCode, Hermes, Cursor, Grok, GitHub Copil
 - [ ] Reemplazar confirmaciones modales de compra/uso por confirmaciones inline; mantener una advertencia reforzada para descartar un Shiny.
 - [ ] Navegar a Inicio después de comprar un huevo y mostrar allí la transición del nuevo compañero.
 - [ ] Añadir detalle por proveedor sin sobrecargar Inicio: hoy/semana/mes/coste, tipos de token y modelos.
-- [ ] Mostrar en límites el plan/cuenta disponible, todos los buckets relevantes, estado obsoleto/autenticación caducada y una acción de refresco manual.
+- [ ] Completar la presentación de límites con previsiones, créditos de reinicio, estado de Luna ausente y autenticación/cuenta obsoleta o caducada. P0 ya muestra el plan, todas las ventanas recibidas y el refresco global.
 - [ ] Diferenciar visualmente `cargando`, `actualizado`, `con advertencias`, `obsoleto` y `error`; conservar los últimos datos válidos.
 - [ ] Añadir selector de calidad de animación con ahorro, equilibrado y fluido, incluyendo respeto a movimiento reducido.
 - [ ] Traducir toda la interfaz mediante un catálogo único; conservar español e inglés como mínimo antes de añadir los demás idiomas upstream.
@@ -154,7 +155,7 @@ No se trasladarán Keychain, Homebrew, LaunchAgent, detalles internos de AppKit 
 - La ventana principal de Windows seguirá siendo más amplia que el popover compacto de macOS; permite una jerarquía visual y navegación lateral mejores.
 - Los campos de bandeja también gobiernan el contenido compacto del hover de la mascota para evitar preferencias contradictorias.
 - La barra de progreso de Inicio sigue el modo usado/restante elegido; colores, alertas y recompensas siempre se calculan con utilización real.
-- La previsión se aplica a ventanas oficiales con duración conocida, no solo al bloque de cinco horas de Claude.
+- El cálculo y las superficies compactas aplican la previsión a ventanas oficiales con duración conocida, no solo al bloque de cinco horas de Claude; falta exponerla en Inicio QML.
 - La integración con escritorios virtuales se limita deliberadamente al escritorio virtual actual de Windows.
 
 ## Criterio de terminado

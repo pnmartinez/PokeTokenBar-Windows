@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 
@@ -10,6 +11,7 @@ Rectangle {
 
     property int currentPage: 0
     property string collectionMode: "dex"
+    readonly property bool darkMode: appModel.darkMode
     property color textColor: appModel.darkMode ? "#edf2ff" : "#172033"
     property color mutedColor: appModel.darkMode ? "#9ba9bf" : "#667289"
     property color panelColor: appModel.darkMode ? "#18212e" : "#ffffff"
@@ -21,6 +23,47 @@ Rectangle {
     property color successColor: appModel.darkMode ? "#75d6a7" : "#237a55"
     property color warningColor: appModel.darkMode ? "#f0bc68" : "#a45b00"
     property color dangerColor: appModel.darkMode ? "#ff9494" : "#b52c3b"
+
+    function revealKeyboardFocus() {
+        const item = root.Window.window ? root.Window.window.activeFocusItem : null
+        if (!item) return
+        for (const page of [homePage, collectionPage, bagPage, shopPage, settingsPage]) {
+            let ancestor = item
+            while (ancestor && ancestor !== page) ancestor = ancestor.parent
+            if (ancestor === page && page.visible) {
+                page.revealItem(item)
+                return
+            }
+        }
+    }
+
+    Connections {
+        target: root.Window.window
+        function onActiveFocusItemChanged() { Qt.callLater(root.revealKeyboardFocus) }
+    }
+
+    component PageScroll: ScrollView {
+        function revealItem(item) {
+            const flickable = contentItem
+            const position = item.mapToItem(flickable.contentItem, 0, 0)
+            const bottom = position.y + item.height + 10
+            let nextY = flickable.contentY
+            if (position.y - 10 < nextY) nextY = position.y - 10
+            else if (bottom > nextY + availableHeight) nextY = bottom - availableHeight
+            flickable.contentY = Math.max(0, Math.min(nextY, flickable.contentHeight - availableHeight))
+        }
+    }
+
+    component FocusFrame: Rectangle {
+        anchors.fill: parent
+        anchors.margins: -2
+        visible: parent.activeFocus
+        color: "transparent"
+        radius: 6
+        border.width: 2
+        border.color: root.accentColor
+        z: 10
+    }
 
     component PokeBall: Item {
         implicitWidth: 24
@@ -63,6 +106,7 @@ Rectangle {
         activeFocusOnTab: true
         Accessible.name: accessibleName
         Accessible.role: Accessible.Button
+        FocusFrame { }
         contentItem: Text {
             text: control.text
             font: control.font
@@ -211,6 +255,7 @@ Rectangle {
             activeFocusOnTab: true
             Accessible.name: toggleRow.label
             Accessible.description: toggleRow.detail
+            FocusFrame { }
             onToggled: toggleRow.changed(checked)
         }
     }
@@ -333,7 +378,7 @@ Rectangle {
             Layout.fillHeight: true
             currentIndex: root.currentPage
 
-            ScrollView {
+            PageScroll {
                 id: homePage
                 clip: true
                 contentWidth: availableWidth
@@ -371,7 +416,7 @@ Rectangle {
 
                         Panel {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: Math.max(250, 82 + appModel.limits.length * 58)
+                            Layout.preferredHeight: 250
                             Layout.columnSpan: 1
                             gradient: Gradient {
                                 GradientStop { position: 0; color: root.panelColor }
@@ -418,9 +463,12 @@ Rectangle {
                         }
 
                         Panel {
+                            objectName: "limitsPanel"
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 250
+                            Layout.preferredHeight: Math.max(250, limitsContent.implicitHeight + 32)
                             ColumnLayout {
+                                id: limitsContent
+                                objectName: "limitsContent"
                                 anchors.fill: parent
                                 anchors.margins: 16
                                 spacing: 8
@@ -496,7 +544,7 @@ Rectangle {
                 }
             }
 
-            ScrollView {
+            PageScroll {
                 id: collectionPage
                 clip: true
                 contentWidth: availableWidth
@@ -521,6 +569,7 @@ Rectangle {
                             textRole: "name"
                             activeFocusOnTab: true
                             Accessible.name: "Pokémon representante"
+                            FocusFrame { }
                             function selectedIndex() {
                                 for (var i = 0; i < appModel.collection.length; ++i)
                                     if (appModel.collection[i].selected) return i
@@ -694,7 +743,7 @@ Rectangle {
                 }
             }
 
-            ScrollView {
+            PageScroll {
                 id: bagPage
                 clip: true
                 contentWidth: availableWidth
@@ -766,7 +815,7 @@ Rectangle {
                 }
             }
 
-            ScrollView {
+            PageScroll {
                 id: shopPage
                 clip: true
                 contentWidth: availableWidth
@@ -808,6 +857,7 @@ Rectangle {
                                     AppButton {
                                         Layout.fillWidth: true
                                         text: modelData.owned ? "Ya está activo" : modelData.price + " tokens"
+                                        accessibleName: "Comprar " + modelData.title + ": " + text
                                         highlighted: modelData.enabled
                                         enabled: modelData.enabled
                                         onClicked: appModel.buy(modelData.kind, modelData.key)
@@ -820,7 +870,7 @@ Rectangle {
                 }
             }
 
-            ScrollView {
+            PageScroll {
                 id: settingsPage
                 clip: true
                 contentWidth: availableWidth
@@ -839,7 +889,7 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: 24
                         Layout.rightMargin: 24
-                        columns: width > 700 ? 2 : 1
+                        columns: width > 820 ? 2 : 1
                         columnSpacing: 12
                         rowSpacing: 12
 
@@ -853,9 +903,11 @@ Rectangle {
                                     Layout.fillWidth: true
                                     Text { text: "Intervalo de actualización"; color: root.textColor; font.pixelSize: 12; Layout.fillWidth: true }
                                     ComboBox {
+                                        objectName: "refreshIntervalCombo"
                                         model: [1, 2, 5, 10, 15]
                                         activeFocusOnTab: true
                                         Accessible.name: "Intervalo de actualización"
+                                        FocusFrame { }
                                         currentIndex: Math.max(0, model.indexOf(appModel.refreshMinutes))
                                         delegate: ItemDelegate { required property var modelData; width: parent ? parent.width : 100; text: modelData + " min" }
                                         contentItem: Text { text: parent.currentText + " min"; color: root.textColor; verticalAlignment: Text.AlignVCenter; leftPadding: 8 }
@@ -867,8 +919,10 @@ Rectangle {
                                     Text { text: "Nombres Pokémon"; color: root.textColor; font.pixelSize: 12; Layout.fillWidth: true }
                                     ComboBox {
                                         id: languageCombo
+                                        objectName: "languageCombo"
                                         activeFocusOnTab: true
                                         Accessible.name: "Idioma de nombres Pokémon"
+                                        FocusFrame { }
                                         model: [{label: "English", key: "en"}, {label: "Español", key: "es"}, {label: "Français", key: "fr"}, {label: "日本語", key: "ja"}]
                                         textRole: "label"
                                         currentIndex: ["en", "es", "fr", "ja"].indexOf(appModel.language)
@@ -889,7 +943,7 @@ Rectangle {
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Text { text: "Tamaño"; color: root.textColor; font.pixelSize: 12 }
-                                    Slider { objectName: "petSizeSlider"; Layout.fillWidth: true; from: 48; to: 192; stepSize: 8; value: appModel.petSize; enabled: appModel.petEnabled; activeFocusOnTab: true; Accessible.name: "Tamaño de mascota"; onMoved: appModel.setPetSize(value) }
+                                    Slider { objectName: "petSizeSlider"; Layout.fillWidth: true; from: 48; to: 192; stepSize: 8; value: appModel.petSize; enabled: appModel.petEnabled; activeFocusOnTab: true; Accessible.name: "Tamaño de mascota"; onMoved: appModel.setPetSize(value); FocusFrame { } }
                                     Text { text: appModel.petSize + " px"; color: root.mutedColor; font.pixelSize: 11 }
                                 }
                                 ToggleRow { label: "Burbujas de uso y reinicios"; checked: appModel.petAlerts; onChanged: value => appModel.setPreference("petAlerts", value) }
@@ -930,12 +984,12 @@ Rectangle {
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Text { text: "Aviso"; color: root.textColor; font.pixelSize: 12; Layout.fillWidth: true }
-                                    SpinBox { objectName: "warningThresholdSpin"; from: 50; to: 95; stepSize: 5; value: appModel.warningThreshold; editable: false; activeFocusOnTab: true; Accessible.name: "Umbral de aviso"; textFromValue: value => value + "%"; valueFromText: text => parseInt(text); onValueModified: appModel.setPreference("warningThreshold", value) }
+                                    SpinBox { objectName: "warningThresholdSpin"; from: 50; to: 95; stepSize: 5; value: appModel.warningThreshold; editable: false; activeFocusOnTab: true; Accessible.name: "Umbral de aviso"; textFromValue: value => value + "%"; valueFromText: text => parseInt(text); onValueModified: appModel.setPreference("warningThreshold", value); contentItem.activeFocusOnTab: false; FocusFrame { } }
                                 }
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Text { text: "Crítico"; color: root.textColor; font.pixelSize: 12; Layout.fillWidth: true }
-                                    SpinBox { objectName: "criticalThresholdSpin"; from: 80; to: 100; stepSize: 5; value: appModel.criticalThreshold; editable: false; activeFocusOnTab: true; Accessible.name: "Umbral crítico"; textFromValue: value => value + "%"; valueFromText: text => parseInt(text); onValueModified: appModel.setPreference("criticalThreshold", value) }
+                                    SpinBox { objectName: "criticalThresholdSpin"; from: 80; to: 100; stepSize: 5; value: appModel.criticalThreshold; editable: false; activeFocusOnTab: true; Accessible.name: "Umbral crítico"; textFromValue: value => value + "%"; valueFromText: text => parseInt(text); onValueModified: appModel.setPreference("criticalThreshold", value); contentItem.activeFocusOnTab: false; FocusFrame { } }
                                 }
                             }
                         }
@@ -949,7 +1003,7 @@ Rectangle {
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Text { text: "Tema"; color: root.textColor; font.pixelSize: 12; Layout.fillWidth: true }
-                                    ComboBox { model: ["Sistema", "Claro", "Oscuro"]; currentIndex: appModel.theme === "light" ? 1 : (appModel.theme === "dark" ? 2 : 0); onActivated: appModel.setPreference("theme", ["system", "light", "dark"][currentIndex]) }
+                                    ComboBox { objectName: "themeCombo"; activeFocusOnTab: true; Accessible.name: "Tema de la interfaz"; FocusFrame { } model: ["Sistema", "Claro", "Oscuro"]; currentIndex: appModel.theme === "light" ? 1 : (appModel.theme === "dark" ? 2 : 0); onActivated: appModel.setPreference("theme", ["system", "light", "dark"][currentIndex]) }
                                 }
                                 ToggleRow { label: "Tokens de hoy en la bandeja"; checked: appModel.trayShowTokens; onChanged: value => appModel.setPreference("trayShowTokens", value) }
                                 ToggleRow { label: "Coste estimado en la bandeja"; checked: appModel.trayShowCost; onChanged: value => appModel.setPreference("trayShowCost", value) }

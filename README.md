@@ -6,7 +6,7 @@ A native Windows port of [chattymin/PokeTokenBar](https://github.com/chattymin/P
 
 ## What works
 
-- Windows 10/11 notification-area tray icon + Qt/PySide6 window, with current companion and stage progress in the tray tooltip and a right-click toggle for the floating pet
+- Windows 10/11 notification-area tray icon and Qt Quick/QML main window, with current companion and stage progress in the tray tooltip and a right-click toggle for the floating pet
 - Opt-in interactive floating desktop pet: animated egg/Pokemon, 48–192 px sizing, drag-and-drop position persistence, hover fields shared with the tray, click-to-open, a context menu matching the tray, and transient limit/full-reset bubbles
 - Optional owned representative Pokemon for the desktop pet, independent of the actively progressing companion and preserving shiny variants; returning to Follow current companion switches immediately to the active egg/Pokemon
 - Configurable Windows balloon/toast-style notifications: deduplicated official-limit warnings (80% warning and 95% critical by default) plus an independent toggle for hatch/evolution/graduation/Rare Candy events
@@ -15,13 +15,14 @@ A native Windows port of [chattymin/PokeTokenBar](https://github.com/chattymin/P
 - Upstream balance values: 5M hatch threshold; 750M / 1.875B / 3B / 6B graduation totals by rarity
 - 25 natures, PokeAPI capture-rate rarity, shiny hatches, and Shiny Charm
 - Bag and token shop: Rare Candy, Mint, Shiny Charm, normal/Uncommon/Rare eggs
-- Separate Home, Collection, Bag, Shop, and Settings areas; paged Pokédex, Shiny sprite toggle, catch history, evolution line, and short in-app celebrations
+- Separate Home, Collection, Bag, Shop, and Settings areas; Pokédex with rarity filters and 24-species pages, owned Shiny variant toggle, separate catch history with evolution stages, and short in-app celebrations
+- Keyboard navigation with Tab/Shift+Tab, visible focus and accessible control names; scrollable pages keep the focused control in view
 - Configurable light/dark/system theme, refresh interval, limit thresholds, used/remaining percentages, tray fields, notifications, Pokémon-name language, and save import/export
 - One upstream-style segmented Used/Remaining selector shared by Home, tray, and desktop-pet hover; compact surfaces use "left", Home gauges follow the selected mode, while warning/critical copy, thresholds, rewards, and risk colors always mean quota used
-- A shared Time left/Date & time selector keeps resets, depletion forecasts, reset-credit expiry and related warnings in one consistent temporal format; countdown forecasts retain the compact "full in ~2h" style, while absolute values use a short date and time
-- Optional timed-limit depletion forecasts with explicit insufficient-data states; Codex Luna Reserve stays visible in Home (as unavailable when Codex omits that bucket) but only replaces the regular allowance on tray/hover after regular usage is exhausted
-- Pokémon-style companion progress shown consistently as `Lv. 0`–`Lv. 100`
-- Deferred first window: real usage and limit data is rendered before the UI appears, followed by a Poké Ball reveal in both the main window and floating pet using a runtime-fetched PokeAPI item sprite with a drawn fallback; later representative changes use the same Poké Ball transition instead of a generic loader
+- A shared Time left/Date & time selector formats resets in QML Home and the timing information shown by the tray and floating pet, including forecasts and reset-credit expiry
+- QML Home shows every returned official-limit window, including Luna Reserve when present, and the provider plan when available. The tray/hover switches to Luna Reserve only after the regular allowance is exhausted; optional depletion forecasts are available on those compact surfaces
+- QML Home shows companion progress as a percentage; the floating pet and tray retain their compact progression presentation
+- Deferred first window: the first usage/limit snapshot is rendered before the UI appears. QML animates the companion scale; the floating pet retains the Poké Ball reveal and representative-change transition
 - Edge-triggered Rare Candy rewards when an official time window reaches 100%, with upstream-compatible first-snapshot seeding and stable identities that ignore one-second reset-time drift
 - Install-time usage baseline: pre-install usage is never retroactively converted into growth or shop currency
 - Collection/catch history and persistent state under `%APPDATA%\PokeTokenBar-Windows`
@@ -29,7 +30,7 @@ A native Windows port of [chattymin/PokeTokenBar](https://github.com/chattymin/P
 - Start with Windows via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
 - Local token/cost aggregation for Claude Code, Codex, Gemini CLI, OpenCode, Hermes Agent, Cursor, Grok CLI, GitHub Copilot CLI, and Kiro CLI
 - Claude official limits via `~\.claude\.credentials.json`
-- Codex official remaining limits and available reset-credit expiry via `codex app-server --stdio`; headline limits stay first, Luna Reserve follows them, and each reset credit stays last in its provider block, turns amber when it expires before Weekly or within one week, red within 72 hours, and adds a matching 🟠/🔴 warning to the tray tooltip
+- Codex official limits and available reset-credit expiry via `codex app-server --stdio`. QML renders the returned time windows; reset-credit expiry warnings remain available in the tray and floating pet, but dedicated credit rows are not yet exposed in QML Home
 
 ## Game loop and items
 
@@ -45,7 +46,9 @@ The default automatic refresh is every five minutes. Each refresh scans local us
 
 ### Standalone EXE
 
-GitHub Actions builds a Windows artifact containing `PokeTokenBar-Windows.exe`. Extract the artifact and run the EXE; it is a GUI executable and does not need a console window.
+GitHub Actions builds a Windows artifact containing `PokeTokenBar-Windows.exe`. Extract the complete application folder, including `_internal`, and run the EXE; it does not need a console window.
+
+Quit an existing instance from its tray menu before launching another build. Builds use the same save and settings by default and do not coordinate concurrent writes. Set `PTB_STATE_DIR` to a separate folder to test another instance with an isolated save and settings.
 
 ### From source
 
@@ -116,7 +119,13 @@ Codex official limits use a local child process. The app does not upload your lo
 
 ## Parity / known gaps
 
-This is a serious first Windows port, not a bit-for-bit rewrite of the SwiftUI app. Current gaps:
+The active main window uses QML. The retained legacy Widgets `MainWindow` is not the user-facing window, so features implemented only there are not available in QML. Current gaps:
+
+- QML Home does not yet show depletion forecasts, reset-credit rows, or a missing-Luna placeholder. It has a global refresh button, but no dedicated authentication/account recovery UI.
+- Provider detail currently shows today/week totals, not the legacy tabs or month/cost/token-type/model breakdown.
+- QML uses percentage progress and a scale transition rather than the legacy Home level label and Poké Ball reveal.
+- Shop and Bag still use native confirmation dialogs; inline confirmations and explanations for every disabled action remain planned.
+- See [ROADMAP.md](ROADMAP.md) for completed QML restoration work and the separate P1–P3 backlog.
 
 - Antigravity's protobuf-in-SQLite reader is not ported yet.
 - Kiro's Windows database location is probed across likely AppData layouts because its local layout has changed between releases; `KIRO_CLI_HOME` is the authoritative override.
