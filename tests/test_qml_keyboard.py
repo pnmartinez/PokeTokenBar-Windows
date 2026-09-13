@@ -13,7 +13,7 @@ from PySide6.QtGui import QAccessible, QFont, QFontDatabase
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from poketokenbar_windows.models import LimitWindow, ProviderLimits, UsageSnapshot
+from poketokenbar_windows.models import LimitWindow, ProviderLimits, ProviderUsage, UsageSnapshot
 from poketokenbar_windows.qml_ui import QmlMainWindow
 from poketokenbar_windows.state import CatchRecord, GameState, MonState
 from poketokenbar_windows.ui import RefreshResult
@@ -166,10 +166,61 @@ class QmlKeyboardTests(unittest.TestCase):
     def test_limits_panel_contains_all_rows_including_more_than_three(self):
         panel = self.root.findChild(QObject, "limitsPanel")
         content = self.root.findChild(QObject, "limitsContent")
-        self.assertEqual(len(self.window.view_model.limits), 6)
+        self.assertEqual(len(self.window.view_model.limits), 5)
         self.assertGreaterEqual(panel.height(), 90)
-        self.assertEqual(content.property("count"), 6)
+        self.assertEqual(content.property("count"), 5)
         self.assertGreater(content.property("contentHeight"), content.height())
+
+    def test_provider_list_scrolls_only_when_rows_really_overflow(self):
+        now = datetime.now(timezone.utc)
+        self.window.render(RefreshResult(
+            UsageSnapshot(
+                providers={
+                    "codex": ProviderUsage("codex", today_tokens=10),
+                    "cursor": ProviderUsage("cursor", today_tokens=20),
+                },
+                scanned_at=now,
+            ),
+            {},
+            {},
+            self.state,
+            [],
+            None,
+            "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        providers = self.root.findChild(QObject, "providersList")
+        self.assertLessEqual(providers.property("contentHeight"), providers.height() + 0.5)
+        self.assertFalse(providers.property("interactive"))
+
+        many = {
+            f"provider{i}": ProviderUsage(f"provider{i}", today_tokens=i)
+            for i in range(1, 6)
+        }
+        self.window.render(RefreshResult(
+            UsageSnapshot(providers=many, scanned_at=now),
+            {},
+            {},
+            self.state,
+            [],
+            None,
+            "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        self.assertGreater(providers.property("contentHeight"), providers.height())
+        self.assertTrue(providers.property("interactive"))
+
+    def test_companion_uses_animation_and_reveal_pokeball(self):
+        animation = self.root.findChild(QObject, "companionAnimation")
+        reveal = self.root.findChild(QObject, "companionReveal")
+        self.window.view_model.set_reveal(False)
+        QTest.qWait(10)
+        self.assertTrue(animation.property("playing"))
+        self.assertTrue(animation.isVisible())
+        self.window.view_model.set_reveal(True)
+        QTest.qWait(10)
+        self.assertFalse(animation.isVisible())
+        self.assertTrue(reveal.isVisible())
 
     def test_catch_log_renders_evolution_arrows(self):
         state = GameState(

@@ -137,6 +137,7 @@ Rectangle {
     component NavButton: Button {
         id: nav
         required property int pageIndex
+        required property string iconKind
         checkable: true
         checked: root.currentPage === pageIndex
         activeFocusOnTab: true
@@ -159,14 +160,54 @@ Rectangle {
                 color: root.accentColor
             }
         }
-        contentItem: Text {
-            text: nav.text
-            color: nav.checked ? root.textColor : root.mutedColor
-            font.pixelSize: root.width < 600 ? 10 : 12
-            font.weight: nav.checked ? Font.Medium : Font.Normal
-            elide: Text.ElideRight
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
+        contentItem: RowLayout {
+            spacing: root.width < 600 ? 3 : 6
+            Item { Layout.fillWidth: true }
+            Canvas {
+                id: navIcon
+                Layout.preferredWidth: 15
+                Layout.preferredHeight: 15
+                property color strokeColor: nav.checked ? root.textColor : root.mutedColor
+                onStrokeColorChanged: requestPaint()
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.strokeStyle = strokeColor
+                    ctx.fillStyle = strokeColor
+                    ctx.lineWidth = 1.5
+                    ctx.lineCap = "round"
+                    ctx.lineJoin = "round"
+                    if (nav.iconKind === "home") {
+                        ctx.beginPath(); ctx.moveTo(2, 7); ctx.lineTo(7.5, 2); ctx.lineTo(13, 7)
+                        ctx.moveTo(3.5, 6); ctx.lineTo(3.5, 13); ctx.lineTo(11.5, 13); ctx.lineTo(11.5, 6); ctx.stroke()
+                    } else if (nav.iconKind === "collection") {
+                        for (let x = 2; x <= 8; x += 6)
+                            for (let y = 2; y <= 8; y += 6) ctx.strokeRect(x, y, 4, 4)
+                    } else if (nav.iconKind === "bag") {
+                        ctx.strokeRect(2.5, 5, 10, 8)
+                        ctx.beginPath(); ctx.arc(7.5, 5, 3, Math.PI, 2 * Math.PI); ctx.stroke()
+                    } else if (nav.iconKind === "shop") {
+                        ctx.beginPath(); ctx.moveTo(1.5, 2.5); ctx.lineTo(3, 2.5); ctx.lineTo(4.2, 9.5)
+                        ctx.lineTo(11.5, 9.5); ctx.lineTo(13, 4.5); ctx.lineTo(3.5, 4.5); ctx.stroke()
+                        ctx.beginPath(); ctx.arc(5.5, 12.5, 1, 0, 2 * Math.PI); ctx.arc(10.5, 12.5, 1, 0, 2 * Math.PI); ctx.fill()
+                    } else {
+                        ctx.beginPath()
+                        ctx.moveTo(2, 3); ctx.lineTo(13, 3); ctx.moveTo(2, 7.5); ctx.lineTo(13, 7.5)
+                        ctx.moveTo(2, 12); ctx.lineTo(13, 12); ctx.stroke()
+                        ctx.beginPath(); ctx.arc(5, 3, 1.6, 0, 2 * Math.PI)
+                        ctx.arc(10, 7.5, 1.6, 0, 2 * Math.PI); ctx.arc(6.5, 12, 1.6, 0, 2 * Math.PI); ctx.fill()
+                    }
+                }
+            }
+            Text {
+                text: nav.text
+                color: nav.checked ? root.textColor : root.mutedColor
+                font.pixelSize: root.width < 600 ? 10 : 12
+                font.weight: nav.checked ? Font.Medium : Font.Normal
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+            }
+            Item { Layout.fillWidth: true }
         }
     }
 
@@ -178,12 +219,6 @@ Rectangle {
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 1
-            Text {
-                text: title
-                color: root.textColor
-                font.pixelSize: 21
-                font.weight: Font.Medium
-            }
             Text {
                 text: subtitle
                 color: root.mutedColor
@@ -357,11 +392,11 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 40
                     spacing: 2
-                    NavButton { pageIndex: 0; text: appModel.strings.nav_home; Layout.fillWidth: true }
-                    NavButton { pageIndex: 1; text: appModel.strings.nav_collection; Layout.fillWidth: true }
-                    NavButton { pageIndex: 2; text: appModel.strings.nav_bag; Layout.fillWidth: true }
-                    NavButton { pageIndex: 3; text: appModel.strings.nav_shop; Layout.fillWidth: true }
-                    NavButton { pageIndex: 4; text: appModel.strings.nav_settings; Layout.fillWidth: true }
+                    NavButton { pageIndex: 0; iconKind: "home"; text: appModel.strings.nav_home; Layout.fillWidth: true }
+                    NavButton { pageIndex: 1; iconKind: "collection"; text: appModel.strings.nav_collection; Layout.fillWidth: true }
+                    NavButton { pageIndex: 2; iconKind: "bag"; text: appModel.strings.nav_bag; Layout.fillWidth: true }
+                    NavButton { pageIndex: 3; iconKind: "shop"; text: appModel.strings.nav_shop; Layout.fillWidth: true }
+                    NavButton { pageIndex: 4; iconKind: "settings"; text: appModel.strings.nav_settings; Layout.fillWidth: true }
                 }
             }
         }
@@ -385,7 +420,6 @@ Rectangle {
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
-                            Text { text: "PokeTokenBar"; color: root.textColor; font.pixelSize: 20; font.weight: Font.Medium }
                             Text { text: appModel.strings.home_description; color: root.mutedColor; font.pixelSize: 10; elide: Text.ElideRight; Layout.fillWidth: true }
                         }
                         AppButton {
@@ -409,12 +443,28 @@ Rectangle {
                                 Layout.fillHeight: true
                                 radius: 12
                                 color: root.accentSurface
-                                Image {
+                                AnimatedImage {
+                                    objectName: "companionAnimation"
                                     anchors.fill: parent
                                     anchors.margins: 5
                                     source: appModel.spriteUrl
                                     fillMode: Image.PreserveAspectFit
                                     smooth: false
+                                    playing: visible && root.currentPage === 0
+                                    visible: !appModel.loading && !appModel.revealActive
+                                }
+                                PokeBall {
+                                    id: revealBall
+                                    objectName: "companionReveal"
+                                    anchors.centerIn: parent
+                                    width: 48; height: 48
+                                    visible: appModel.loading || appModel.revealActive
+                                    SequentialAnimation on rotation {
+                                        running: revealBall.visible
+                                        loops: Animation.Infinite
+                                        NumberAnimation { from: -18; to: 18; duration: 200; easing.type: Easing.InOutQuad }
+                                        NumberAnimation { from: 18; to: -18; duration: 200; easing.type: Easing.InOutQuad }
+                                    }
                                 }
                             }
                             ColumnLayout {
@@ -450,15 +500,19 @@ Rectangle {
                         id: providersPanel
                         objectName: "providersPanel"
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.min(122, Math.max(52, 30 + Math.max(1, appModel.providers.length) * 28))
+                        Layout.preferredHeight: 16 + providersTitle.implicitHeight + 4 + Math.min(82, Math.max(26, appModel.providers.length * 28 - 2))
+                        Layout.minimumHeight: Layout.preferredHeight
+                        Layout.maximumHeight: Layout.preferredHeight
                         ColumnLayout {
                             anchors.fill: parent
                             anchors.margins: 8
                             spacing: 4
-                            Text { text: appModel.strings.providers; color: root.textColor; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            Text { id: providersTitle; text: appModel.strings.providers; color: root.textColor; font.pixelSize: 12; font.weight: Font.DemiBold }
                             ListView {
                                 id: providersList
                                 objectName: "providersList"
+                                boundsBehavior: Flickable.StopAtBounds
+                                interactive: contentHeight > height
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 clip: true
@@ -668,20 +722,32 @@ Rectangle {
                             Layout.fillWidth: true
                             Layout.leftMargin: 14
                             Layout.rightMargin: 14
-                            Layout.preferredHeight: 154
+                            Layout.preferredHeight: 180
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: 10
                                 spacing: 5
-                                RowLayout {
+                                Item {
+                                    objectName: "catchHeader"
                                     Layout.fillWidth: true
-                                    Image { source: modelData.sprite; Layout.preferredWidth: 48; Layout.preferredHeight: 48; fillMode: Image.PreserveAspectFit; smooth: false }
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
+                                    Layout.preferredHeight: 32
+                                    Column {
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        spacing: 2
                                         Text { text: (modelData.shiny ? "✨ " : "") + modelData.name + "  " + modelData.number; color: root.textColor; font.pixelSize: 13; font.weight: Font.Medium }
                                         Text { text: modelData.meta; color: root.mutedColor; font.pixelSize: 9 }
                                     }
-                                    Text { visible: modelData.current; text: appModel.strings.raising; color: root.accentColor; font.pixelSize: 9; font.weight: Font.Medium }
+                                    Text {
+                                        objectName: "raisingBadge"
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        visible: modelData.current
+                                        text: appModel.strings.raising
+                                        color: root.accentColor
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                    }
                                 }
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -697,9 +763,9 @@ Rectangle {
                                             ColumnLayout {
                                                 Layout.fillWidth: true
                                                 spacing: 1
-                                                Image { source: modelData.sprite; opacity: modelData.owned ? 1 : 0.3; Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 38; Layout.preferredHeight: 38; fillMode: Image.PreserveAspectFit; smooth: false }
-                                                Text { text: modelData.name; color: modelData.owned ? root.textColor : root.mutedColor; font.pixelSize: 8; elide: Text.ElideRight; horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true }
-                                                Text { text: modelData.status; color: modelData.current ? root.accentColor : root.mutedColor; font.pixelSize: 8; horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true }
+                                                Image { source: modelData.sprite; opacity: modelData.owned ? 1 : 0.3; Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 76; Layout.preferredHeight: 76; fillMode: Image.PreserveAspectFit; smooth: false }
+                                                Text { text: modelData.name; color: modelData.owned ? root.textColor : root.mutedColor; font.pixelSize: 10; elide: Text.ElideRight; horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true }
+                                                Text { text: modelData.status; color: modelData.current ? root.accentColor : root.mutedColor; font.pixelSize: 9; horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true }
                                             }
                                         }
                                     }

@@ -25,6 +25,7 @@ from poketokenbar_windows.models import (
 from poketokenbar_windows.pokemon import EGG_HATCH_THRESHOLD, RARE_CANDY_XP
 from poketokenbar_windows.floating_pet import (
     AnimatedSpriteFrameStabilizer,
+    FloatingPetController,
     FloatingPetWindow,
     HoverCallout,
 )
@@ -244,12 +245,11 @@ class UITests(unittest.TestCase):
 
         windows = [row for row in model.limits if row["kind"] == "window"]
         credit = next(row for row in model.limits if row["kind"] == "credit")
-        reserve = next(row for row in model.limits if row["kind"] == "unavailable")
+        self.assertFalse(any(row["kind"] == "unavailable" for row in model.limits))
         self.assertEqual(len(windows), 2)
         self.assertTrue(all(row["forecast"] for row in windows))
         self.assertIn("3 resets available", credit["label"])
         self.assertIn("first expires", credit["label"])
-        self.assertEqual(reserve["label"], "Luna Reserve")
 
         self.settings.setValue("limits_forecast_enabled", False)
         model.render(
@@ -324,7 +324,7 @@ class UITests(unittest.TestCase):
         self.assertTrue(model.catches[0]["current"])
         self.assertEqual(
             [stage["status"] for stage in model.catches[0]["stages"]],
-            ["Obtained", "Current", "Future"],
+            ["Previous form", "You have this", "Not owned"],
         )
         self.assertEqual(model.catches[0]["stages"][2]["name"], "???")
 
@@ -622,6 +622,28 @@ class UITests(unittest.TestCase):
         self.assertEqual(pet.loading_timer.interval(), 90)
         pet.close()
 
+    def test_reenabling_desktop_pet_replays_pokeball_reveal(self):
+        controller = FloatingPetController(self.app, self.settings, lambda: None)
+        self.addCleanup(controller.shutdown)
+        result = RefreshResult(
+            UsageSnapshot(),
+            {},
+            {},
+            GameState(),
+            [],
+            None,
+            "Pokemon Egg",
+            pet_sprite_path=None,
+            pet_display_name="Pokemon Egg",
+            pet_is_egg=True,
+        )
+        controller.update(result)
+        self.assertFalse(controller.pet.reveal_timer.isActive())
+
+        controller.set_enabled(True)
+
+        self.assertTrue(controller.pet.reveal_timer.isActive())
+
     def test_floating_pet_menu_matches_tray_order_and_labels(self):
         pet = FloatingPetWindow(96)
         menu, actions = pet._build_context_menu()
@@ -632,6 +654,14 @@ class UITests(unittest.TestCase):
         self.assertTrue(actions["visibility"].isCheckable())
         self.assertTrue(actions["visibility"].isChecked())
         menu.close()
+
+        pet.language = "gl"
+        galician_menu, _ = pet._build_context_menu()
+        self.assertEqual(
+            [action.text() if not action.isSeparator() else None for action in galician_menu.actions()],
+            ["Abrir PokeTokenBar", "Amosar mascota no escritorio", "Actualizar", None, "Saír"],
+        )
+        galician_menu.close()
         pet.close()
 
     def test_limit_only_hover_keeps_a_readable_horizontal_shape(self):
@@ -769,20 +799,16 @@ class UITests(unittest.TestCase):
             ),
         )
 
-    def test_home_shows_luna_reserve_when_codex_omits_its_bucket(self):
+    def test_home_omits_luna_reserve_when_codex_does_not_report_it(self):
         now = datetime.now(timezone.utc)
         window = self._window()
         window.render(
             RefreshResult(
                 UsageSnapshot(scanned_at=now),
-                {
-                    "codex": ProviderLimits(
-                        "codex",
-                        windows=[
-                            LimitWindow("Weekly", 17, now + timedelta(days=6))
-                        ],
-                    )
-                },
+                {"codex": ProviderLimits(
+                    "codex",
+                    windows=[LimitWindow("Weekly", 17, now + timedelta(days=6))],
+                )},
                 {},
                 GameState(),
                 [],
@@ -790,11 +816,13 @@ class UITests(unittest.TestCase):
                 "Pokemon Egg",
             )
         )
-
-        reserve_widget = window.limits_list.itemWidget(window.limits_list.item(1))
-        reserve_title = reserve_widget.findChild(QLabel).text()
-        self.assertEqual(reserve_title, "Codex · Luna Reserve · unavailable")
-        self.assertIsNone(reserve_widget.findChild(QProgressBar))
+        titles = [
+            label.text()
+            for index in range(window.limits_list.count())
+            if (widget := window.limits_list.itemWidget(window.limits_list.item(index)))
+            for label in widget.findChildren(QLabel)
+        ]
+        self.assertFalse(any("Luna Reserve" in title for title in titles))
 
     def test_offline_refresh_still_emits_a_renderable_result(self):
         controller = TrayController.__new__(TrayController)
@@ -876,6 +904,21 @@ class UITests(unittest.TestCase):
         text = tray_tooltip(result, show_tokens=False, show_cost=True, show_limit=False)
         self.assertNotIn("1.5M", text)
         self.assertIn("$2.50", text)
+
+    def test_tray_shows_official_limit_with_zero_local_tokens_today(self):
+        snapshot = UsageSnapshot(
+            providers={"codex": ProviderUsage("codex", today_tokens=0)}
+        )
+        limits = {"codex": ProviderLimits(
+            "codex",
+            windows=[LimitWindow("Weekly", 92)],
+        )}
+        result = RefreshResult(
+            snapshot, limits, {}, GameState(language="gl"), [], None, "Pokemon Egg"
+        )
+        text = tray_tooltip(result, limit_display_mode="remaining")
+        self.assertIn("Codex Semanal: 8% restante", text)
+        self.assertIn("Nv. 0", text)
 
     def test_light_dark_and_system_themes_share_accessibility_rules(self):
         for theme in ("system", "light", "dark"):

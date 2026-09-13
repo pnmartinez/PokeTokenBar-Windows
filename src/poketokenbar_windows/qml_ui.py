@@ -19,7 +19,6 @@ from .formatting import (
     compact_tokens,
     format_limit_countdown,
     format_limit_datetime,
-    is_reserve_window,
     limit_display_percent,
     limit_forecast,
     limit_forecast_unavailable_reason,
@@ -577,9 +576,9 @@ class QmlViewModel(QObject):
                             else "???"
                         ),
                         "status": (
-                            self._tr("current")
-                            if current
-                            else (self._tr("obtained") if owned else self._tr("future"))
+                            self._tr("catch_owned")
+                            if index == owned_index
+                            else self._tr("catch_previous" if owned else "catch_future")
                         ),
                         "owned": owned,
                         "current": current,
@@ -759,23 +758,6 @@ class QmlViewModel(QObject):
                         "reset": reset,
                         "forecast": forecast_text,
                         "urgency": urgency,
-                    }
-                )
-
-            if key.lower() == "codex" and not any(
-                is_reserve_window(window) for window in ordered_windows
-            ):
-                limits.append(
-                    {
-                        "kind": "unavailable",
-                        "provider": provider_name,
-                        "plan": provider_limits.plan or "",
-                        "label": "Luna Reserve",
-                        "percent": 0,
-                        "percentText": self._tr("reserve_unavailable"),
-                        "reset": "",
-                        "forecast": "",
-                        "urgency": "neutral",
                     }
                 )
 

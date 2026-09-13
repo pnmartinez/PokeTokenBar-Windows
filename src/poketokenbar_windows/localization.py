@@ -432,6 +432,41 @@ _STRINGS: dict[str, dict[str, str]] = {
 }
 
 
+# Native Qt surfaces share this vocabulary with the QML interface.
+_NATIVE_STRINGS = {
+    "en": {"menu_open": "Open PokeTokenBar", "menu_pet": "Show desktop pet", "menu_quit": "Quit", "catch_owned": "You have this", "catch_previous": "Previous form", "catch_future": "Not owned"},
+    "es": {"menu_open": "Abrir PokeTokenBar", "menu_pet": "Mostrar mascota de escritorio", "menu_quit": "Salir", "catch_owned": "Lo tienes", "catch_previous": "Forma anterior", "catch_future": "No obtenido"},
+    "gl": {"menu_open": "Abrir PokeTokenBar", "menu_pet": "Amosar mascota no escritorio", "menu_quit": "Saír", "catch_owned": "Xa o tes", "catch_previous": "Forma anterior", "catch_future": "Sen obter"},
+}
+for _language, _entries in _NATIVE_STRINGS.items():
+    _STRINGS[_language].update(_entries)
+
+_SURFACE_PHRASES = {
+    "es": {
+        "Critical limit": "Límite crítico", "Limit warning": "Aviso de límite",
+        "Full reset expires soon": "El reinicio completo caduca pronto",
+        "Full reset reminder": "Recordatorio de reinicio completo",
+        "full reset expiry is unknown": "reinicio completo con caducidad desconocida",
+        "full reset": "reinicio completo", "tokens today": "tokens hoy",
+        "estimated cost today": "coste estimado hoy", "today": "hoy",
+        "5-hour": "5 horas", "Weekly": "Semanal", "remaining": "restante",
+        "used": "usado", "left": "restante", "expires": "caduca",
+        "Warning": "Aviso", "Critical": "Crítico", "in": "en", "now": "ahora", "egg": "huevo", "Lv": "Nv",
+    },
+    "gl": {
+        "Critical limit": "Límite crítico", "Limit warning": "Aviso de límite",
+        "Full reset expires soon": "O reinicio completo caduca axiña",
+        "Full reset reminder": "Lembranza de reinicio completo",
+        "full reset expiry is unknown": "reinicio completo con caducidade descoñecida",
+        "full reset": "reinicio completo", "tokens today": "tokens hoxe",
+        "estimated cost today": "custo estimado hoxe", "today": "hoxe",
+        "5-hour": "5 horas", "Weekly": "Semanal", "remaining": "restante",
+        "used": "usado", "left": "restante", "expires": "caduca",
+        "Warning": "Aviso", "Critical": "Crítico", "in": "en", "now": "agora", "egg": "ovo", "Lv": "Nv",
+    },
+}
+
+
 def normalize_language(language: Any) -> str:
     candidate = str(language or "").strip().lower()
     return candidate if candidate in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
@@ -447,4 +482,14 @@ def text(language: Any, key: str, **values: Any) -> str:
     template = _STRINGS[normalized].get(key, _STRINGS[DEFAULT_LANGUAGE].get(key, key))
     return template.format(**values)
 
+def localize_surface(value: str, language: Any = "en") -> str:
+    """Translate fixed formatter vocabulary while preserving names and values."""
+    import re
+    phrases = _SURFACE_PHRASES.get(normalize_language(language))
+    if not phrases:
+        return value
+    pattern = r"(?<!\w)(" + "|".join(
+        re.escape(key) for key in sorted(phrases, key=len, reverse=True)
+    ) + r")(?!\w)"
+    return re.sub(pattern, lambda match: phrases[match.group(0)], value)
 

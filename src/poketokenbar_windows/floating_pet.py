@@ -16,6 +16,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QMenu, QVBoxLayout, QWidget
 
+from .localization import localize_surface, text as translated_text
 from .formatting import (
     DEFAULT_LIMIT_DISPLAY_MODE,
     DEFAULT_LIMIT_TIME_MODE,
@@ -491,13 +492,13 @@ class FloatingPetWindow(QWidget):
     def _build_context_menu(self) -> tuple[QMenu, dict[str, object]]:
         """Mirror the tray menu exactly while the pet itself is visible."""
         menu = QMenu(self)
-        open_action = menu.addAction(MENU_OPEN_LABEL)
-        visibility_action = menu.addAction(MENU_PET_VISIBILITY_LABEL)
+        open_action = menu.addAction(translated_text(getattr(self, "language", "en"), "menu_open"))
+        visibility_action = menu.addAction(translated_text(getattr(self, "language", "en"), "menu_pet"))
         visibility_action.setCheckable(True)
         visibility_action.setChecked(True)
-        refresh_action = menu.addAction(MENU_REFRESH_LABEL)
+        refresh_action = menu.addAction(translated_text(getattr(self, "language", "en"), "refresh"))
         menu.addSeparator()
-        quit_action = menu.addAction(MENU_QUIT_LABEL)
+        quit_action = menu.addAction(translated_text(getattr(self, "language", "en"), "menu_quit"))
         return menu, {
             "open": open_action,
             "visibility": visibility_action,
@@ -632,6 +633,7 @@ class FloatingPetController(QObject):
         self.reveal_on_next_update = False
         self.alert_memory = load_alert_memory(settings.value(PET_ALERT_MEMORY_KEY, ""))
         self.pet = FloatingPetWindow(self.size)
+        self.pet.language = "en"
         self.hover = HoverCallout()
         self.bubble = AlertBubble()
         self.bubble_timer = QTimer(self)
@@ -693,12 +695,18 @@ class FloatingPetController(QObject):
         if self.enabled == enabled:
             return
         self.enabled = enabled
+        if enabled:
+            self.reveal_on_next_update = True
         self.settings.setValue(PET_ENABLED_KEY, enabled)
         self.settings.sync()
         self._apply_visibility()
         self.enabled_changed.emit(enabled)
         if enabled and self.result is not None:
             self._render_result(evaluate_alerts=True)
+
+    def set_language(self, language: str) -> None:
+        self.pet.language = language
+        self._refresh_hover_text()
 
     def set_size(self, size: int) -> None:
         normalized = normalize_pet_size(size)
@@ -747,14 +755,17 @@ class FloatingPetController(QObject):
     def _hover_text(self) -> str:
         if self.result is None:
             return ""
-        return pet_hover_text(
-            self.result.snapshot,
-            self.result.limits,
-            self.display_mode,
-            time_mode=self.time_mode,
-            show_tokens=self.show_tokens,
-            show_cost=self.show_cost,
-            show_limit=self.show_limit,
+        return localize_surface(
+            pet_hover_text(
+                self.result.snapshot,
+                self.result.limits,
+                self.display_mode,
+                time_mode=self.time_mode,
+                show_tokens=self.show_tokens,
+                show_cost=self.show_cost,
+                show_limit=self.show_limit,
+            ),
+            self.pet.language,
         )
 
     def _refresh_hover_text(self) -> None:
@@ -782,6 +793,7 @@ class FloatingPetController(QObject):
 
     def update(self, result: Any) -> None:
         self.result = result
+        self.pet.language = result.state.language
         self._render_result(evaluate_alerts=True)
 
     def set_loading(self) -> None:
@@ -827,7 +839,11 @@ class FloatingPetController(QObject):
             alert = choose_pet_alert(alerts)
             if alert is not None:
                 self.hover.hide()
-                self.bubble.set_alert(alert)
+                self.bubble.set_alert(replace(
+                    alert,
+                    title=localize_surface(alert.title, self.pet.language),
+                    body=localize_surface(alert.body, self.pet.language),
+                ))
                 self._position_auxiliary_windows()
                 self.bubble.show()
                 self.bubble.raise_()

@@ -572,7 +572,7 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(limit_percent_text(75, "remaining", compact=True), "25% left")
         self.assertEqual(
             limit_alert_body("Codex", "Weekly", 95, "remaining"),
-            "Codex Weekly: 95% used.",
+            "Codex Weekly: 5% remaining.",
         )
 
     def test_timed_limit_forecast_extrapolates_average_window_utilization(self):
