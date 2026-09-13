@@ -54,7 +54,7 @@ class QmlKeyboardTests(unittest.TestCase):
                 CatchRecord(
                     i,
                     i,
-                    [1, 2, 3] if i == 1 else [i],
+                    [1, 2, 3] if i == 1 else ([26, 27, 28] if i == 26 else [i]),
                     "common",
                     i == 1,
                     "Hardy",
@@ -84,6 +84,11 @@ class QmlKeyboardTests(unittest.TestCase):
     def name(self, item):
         accessible = QAccessible.queryAccessibleInterface(item)
         return accessible.text(QAccessible.Text.Name) if accessible else ""
+
+    def controls_tree(self, item):
+        for child in item.childItems():
+            yield child
+            yield from self.controls_tree(child)
 
     def controls(self, item=None):
         for child in (item or self.root).childItems():
@@ -166,17 +171,37 @@ class QmlKeyboardTests(unittest.TestCase):
         self.assertEqual(content.property("count"), 6)
         self.assertGreater(content.property("contentHeight"), content.height())
 
-    def test_catch_log_declares_evolution_arrows(self):
-        qml = (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "poketokenbar_windows"
-            / "qml"
-            / "Main.qml"
-        ).read_text(encoding="utf-8")
-        self.assertIn('objectName: "evolutionArrow"', qml)
-        self.assertIn('visible: index > 0; text: "→"', qml)
-        self.assertEqual(len(self.window.view_model.catches[-1]["stages"]), 3)
+    def test_catch_log_renders_evolution_arrows(self):
+        state = GameState(
+            mon=MonState(1, [1, 2, 3], 1, 10, "common", False, "Hardy"),
+            catches=[
+                CatchRecord(
+                    1,
+                    1,
+                    [1, 2, 3],
+                    "common",
+                    False,
+                    "Hardy",
+                    "2026-09-01",
+                )
+            ],
+        )
+        window = QmlMainWindow(state, self.settings, LocalSprites())
+        self.addCleanup(window.deleteLater)
+        self.addCleanup(window.hide)
+        root = window.quick.rootObject()
+        root.setProperty("currentPage", 1)
+        root.setProperty("collectionMode", "catches")
+        window.show()
+        QTest.qWait(50)
+        window.grab()
+        self.app.processEvents()
+        arrows = [
+            item
+            for item in self.controls_tree(root)
+            if item.objectName() == "evolutionArrow"
+        ]
+        self.assertTrue(any(arrow.isVisible() for arrow in arrows))
 
     def test_collection_can_be_paged_and_switched_using_keyboard(self):
         self.root.setProperty("currentPage", 1)
