@@ -231,6 +231,10 @@ class QmlKeyboardTests(unittest.TestCase):
         animation = self.root.findChild(QObject, "dexDetailAnimation")
         self.assertTrue(detail.isVisible())
         self.assertTrue(animation.property("playing"))
+        selections = []
+        self.window.view_model.representativeChanged.connect(selections.append)
+        self.activate("Set as desktop companion")
+        self.assertEqual(selections[-1], (1, True))
         self.activate("Next →")
         self.assertEqual(self.root.property("selectedDexIndex"), 1)
 

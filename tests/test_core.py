@@ -11,6 +11,7 @@ from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
 
 import poketokenbar_windows.limits as limits_module
+import poketokenbar_windows.windows as windows_module
 from poketokenbar_windows.cursor import (
     cache_account_identifier,
     has_next_page,
@@ -68,6 +69,7 @@ from poketokenbar_windows.windows import (
     cursor_database_candidates,
     kiro_database_candidates,
     state_dir,
+    startup_command,
 )
 
 
@@ -341,6 +343,60 @@ class WindowsIntegrationTests(unittest.TestCase):
     def test_short_display_name_preserves_stable_windows_identity(self):
         self.assertEqual(APP_NAME, "PokeTokenBar")
         self.assertEqual(REGISTRY_VALUE_NAME, "PokeTokenBar Windows")
+
+    def test_autostart_uses_tray_only_background_mode(self):
+        with (
+            patch.object(windows_module.sys, "executable", r"C:\Apps\PokeTokenBar-Windows.exe"),
+            patch.object(windows_module.sys, "frozen", True, create=True),
+        ):
+            self.assertEqual(
+                startup_command(),
+                r'"C:\Apps\PokeTokenBar-Windows.exe" --background',
+            )
+
+        from poketokenbar_windows.app import _background_launch_requested
+
+        self.assertTrue(_background_launch_requested(["PokeTokenBar-Windows.exe", "--background"]))
+        self.assertFalse(_background_launch_requested(["PokeTokenBar-Windows.exe"]))
+
+    def test_background_launch_does_not_request_the_main_window(self):
+        from poketokenbar_windows import app as app_module
+
+        for arguments, expected_calls in (
+            (["PokeTokenBar-Windows.exe", "--background"], 0),
+            (["PokeTokenBar-Windows.exe"], 1),
+        ):
+            with (
+                patch.object(app_module.sys, "argv", arguments),
+                patch.object(app_module, "_configure_windows_identity"),
+                patch.object(app_module, "_hide_console_window"),
+                patch.object(app_module, "refresh_autostart_registration"),
+                patch("poketokenbar_windows.ui.application_icon"),
+                patch("poketokenbar_windows.ui.TrayController") as controller_type,
+                patch("PySide6.QtWidgets.QApplication") as app_type,
+            ):
+                app_type.return_value.exec.return_value = 0
+                self.assertEqual(app_module.main(), 0)
+                self.assertEqual(controller_type.return_value.show_window.call_count, expected_calls)
+                app_type.assert_called_once_with(["PokeTokenBar-Windows.exe"])
+
+    def test_autostart_migration_only_touches_the_same_executable(self):
+        import winreg
+
+        with (
+            patch.object(windows_module.sys, "executable", r"C:\Apps\PokeTokenBar-Windows.exe"),
+            patch.object(windows_module.sys, "frozen", True, create=True),
+            patch.object(winreg, "OpenKey"),
+            patch.object(winreg, "QueryValueEx") as query,
+            patch.object(windows_module, "set_autostart") as update,
+        ):
+            query.return_value = (r'"C:\Other\PokeTokenBar-Windows.exe"', winreg.REG_SZ)
+            windows_module.refresh_autostart_registration()
+            update.assert_not_called()
+
+            query.return_value = (r'"C:\Apps\PokeTokenBar-Windows.exe"', winreg.REG_SZ)
+            windows_module.refresh_autostart_registration()
+            update.assert_called_once_with(True)
 
     def test_native_appdata_paths(self):
         env = {

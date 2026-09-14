@@ -147,6 +147,7 @@ class QmlViewModel(QObject):
             "rareCandyCount": 0,
             "mintCount": 0,
             "shinyCharmActive": False,
+            "representativeFollowsCurrent": state.representative_species_id is None,
             "refreshMinutes": int(settings.value("refresh_minutes", 5)),
             "petEnabled": settings_bool(settings.value(PET_ENABLED_KEY, False), False),
             "petSize": normalize_pet_size(
@@ -284,6 +285,9 @@ class QmlViewModel(QObject):
     )
     shinyCharmActive = Property(
         bool, lambda self: self._values["shinyCharmActive"], notify=dataChanged
+    )
+    representativeFollowsCurrent = Property(
+        bool, lambda self: self._values["representativeFollowsCurrent"], notify=dataChanged
     )
     refreshMinutes = Property(
         int, lambda self: self._values["refreshMinutes"], notify=dataChanged
@@ -423,6 +427,7 @@ class QmlViewModel(QObject):
             rareCandyCount=int(state.inventory.get("rare_candy", 0)),
             mintCount=int(state.inventory.get("mint", 0)),
             shinyCharmActive=state.shiny_charm_active,
+            representativeFollowsCurrent=state.representative_species_id is None,
             language=language,
             strings=ui_strings(language),
         )
@@ -496,18 +501,38 @@ class QmlViewModel(QObject):
                 )
                 row["hasShiny"] = bool(row["hasShiny"] or catch.is_shiny)
 
+        selected_id = self.state.representative_species_id
+        selected_shiny = bool(self.state.representative_is_shiny)
+        follows_current = selected_id is None
+        current_id = self.state.mon.current_id if self.state.mon is not None else None
+        current_shiny = bool(self.state.mon.is_shiny) if self.state.mon is not None else False
+
         rows: list[dict[str, Any]] = []
         for species_id, row in sorted(species.items()):
             has_shiny = bool(row["hasShiny"])
-            show_shiny = self._dex_shiny_by_species.get(species_id, has_shiny)
+            default_shiny = has_shiny
+            if selected_id == species_id:
+                default_shiny = selected_shiny
+            elif follows_current and current_id == species_id:
+                default_shiny = current_shiny
+            show_shiny = self._dex_shiny_by_species.get(species_id, default_shiny)
             if not has_shiny:
                 show_shiny = False
+            is_representative = (
+                selected_id == species_id and selected_shiny == show_shiny
+            ) or (
+                follows_current
+                and current_id == species_id
+                and current_shiny == show_shiny
+            )
             rows.append(
                 {
                     **row,
                     "name": self.api.localized_name(species_id, self._language()),
                     "number": f"#{species_id:03d}",
                     "showShiny": show_shiny,
+                    "representative": is_representative,
+                    "followingCurrent": is_representative and follows_current,
                     "sprite": _file_url(
                         self.api.sprite_path(
                             species_id, shiny=show_shiny, animated=False
@@ -609,11 +634,10 @@ class QmlViewModel(QObject):
                     "shiny": bool(catch.is_shiny),
                     "current": is_current,
                     "description": (
-                        self._tr("fully_evolved", name=self.api.localized_name(display_id, self._language()))
+                        self._tr("fully_evolved")
                         if owned_index == len(path_ids) - 1
                         else self._tr(
                             "have_only_stage",
-                            name=self.api.localized_name(display_id, self._language()),
                             stage=owned_index + 1,
                             total=len(path_ids),
                         )
@@ -649,6 +673,7 @@ class QmlViewModel(QObject):
                     "title": self._tr(title_key),
                     "subtitle": self._tr(subtitle_key),
                     "icon": icon,
+                    "eggTier": key if kind == "egg" else "",
                     "price": compact_tokens(price),
                     "enabled": wallet >= price and not owned,
                     "owned": owned,
@@ -972,6 +997,14 @@ class QmlViewModel(QObject):
             else (int(row["speciesId"]), bool(row["shiny"]))
         )
         self.representativeChanged.emit(selection)
+
+    @Slot(int, bool)
+    def chooseDexRepresentative(self, species_id: int, shiny: bool) -> None:
+        self.representativeChanged.emit((int(species_id), bool(shiny)))
+
+    @Slot()
+    def followCurrentRepresentative(self) -> None:
+        self.representativeChanged.emit(None)
 
     @Slot(str)
     def useItem(self, key: str) -> None:

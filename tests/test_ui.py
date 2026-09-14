@@ -293,6 +293,31 @@ class UITests(unittest.TestCase):
 
         self.assertEqual(model.collection[0]["display"], "Follow active companion")
         self.assertTrue(any(row["display"].startswith("#001 ") for row in model.collection[1:]))
+        self.assertTrue(model.dexEntries[0]["representative"])
+        self.assertTrue(model.dexEntries[0]["followingCurrent"])
+        selections = []
+        model.representativeChanged.connect(selections.append)
+        model.chooseDexRepresentative(1, False)
+        model.followCurrentRepresentative()
+        self.assertEqual(selections, [(1, False), None])
+
+    def test_qml_dex_marks_the_selected_representative_variant(self):
+        state = GameState(
+            mon=MonState(1, [1, 2], 0, 0, "common", False, "Hardy"),
+            catches=[
+                CatchRecord(1, 1, [1, 2], "common", True, "Hardy", "2026-09-01")
+            ],
+            representative_species_id=1,
+            representative_is_shiny=True,
+        )
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+        self.assertFalse(model.representativeFollowsCurrent)
+        self.assertTrue(model.dexEntries[0]["showShiny"])
+        self.assertTrue(model.dexEntries[0]["representative"])
+        self.assertFalse(model.dexEntries[0]["followingCurrent"])
+
+        model.toggleDexVariant(1)
+        self.assertFalse(model.dexEntries[0]["representative"])
 
     def test_qml_dex_supports_paging_rarity_filters_and_shiny_variants(self):
         catches = [
@@ -340,7 +365,7 @@ class UITests(unittest.TestCase):
         self.assertEqual(model.catches[0]["stages"][2]["name"], "???")
         self.assertEqual(
             model.catches[0]["description"],
-            "You have Ivysaur only · stage 2 of 3",
+            "Only stage 2 of 3",
         )
 
     def test_legacy_desktop_pet_preferences_migrate_without_overwriting_current_values(self):

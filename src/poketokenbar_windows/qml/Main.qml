@@ -95,29 +95,137 @@ Rectangle {
     component PokeBall: Item {
         implicitWidth: 24
         implicitHeight: 24
-        Rectangle {
+        Canvas {
             anchors.fill: parent
-            radius: width / 2
-            color: "#ef5261"
-            border.color: root.textColor
-            border.width: 2
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                height: 4
-                color: root.textColor
-            }
-            Rectangle {
-                anchors.centerIn: parent
-                width: 9
-                height: 9
-                radius: 5
-                color: root.panelColor
-                border.color: root.textColor
-                border.width: 2
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                const size = Math.min(width, height)
+                const cx = width / 2
+                const cy = height / 2
+                const radius = size / 2 - 1.2
+                const outline = "#151922"
+
+                ctx.save()
+                ctx.beginPath()
+                ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
+                ctx.clip()
+                ctx.fillStyle = "#ffffff"
+                ctx.fillRect(cx - radius, cy, radius * 2, radius)
+                ctx.fillStyle = "#ef4455"
+                ctx.fillRect(cx - radius, cy - radius, radius * 2, radius)
+                ctx.restore()
+
+                ctx.strokeStyle = outline
+                ctx.lineWidth = Math.max(1.6, size * 0.08)
+                ctx.beginPath()
+                ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
+                ctx.stroke()
+                ctx.fillStyle = outline
+                ctx.fillRect(cx - radius, cy - size * 0.075, radius * 2, size * 0.15)
+                ctx.beginPath()
+                ctx.arc(cx, cy, size * 0.20, 0, 2 * Math.PI)
+                ctx.fill()
+                ctx.fillStyle = "#ffffff"
+                ctx.beginPath()
+                ctx.arc(cx, cy, size * 0.105, 0, 2 * Math.PI)
+                ctx.fill()
             }
         }
+    }
+
+    component EggIcon: Item {
+        required property string tier
+        implicitWidth: 42
+        implicitHeight: 42
+        Canvas {
+            anchors.fill: parent
+            property string eggTier: parent.tier
+            onEggTierChanged: requestPaint()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                const scale = Math.min(width / 42, height / 42)
+                ctx.save()
+                ctx.scale(scale, scale)
+                const fill = eggTier === "rare" ? "#936fe2"
+                    : (eggTier === "uncommon" ? "#58a7e8" : "#faf8ef")
+                const spots = eggTier === "rare" ? "#f2c653"
+                    : (eggTier === "uncommon" ? "#d8f2ff" : "#c7ccd5")
+                const outline = eggTier === "rare" ? "#352253"
+                    : (eggTier === "uncommon" ? "#173b61" : "#30343b")
+
+                ctx.fillStyle = fill
+                ctx.strokeStyle = outline
+                ctx.lineWidth = 2
+                ctx.beginPath()
+                ctx.moveTo(21, 3)
+                ctx.bezierCurveTo(14, 3, 8, 17, 8, 27)
+                ctx.bezierCurveTo(8, 36, 13, 40, 21, 40)
+                ctx.bezierCurveTo(29, 40, 34, 36, 34, 27)
+                ctx.bezierCurveTo(34, 17, 28, 3, 21, 3)
+                ctx.closePath()
+                ctx.fill()
+                ctx.stroke()
+
+                ctx.fillStyle = spots
+                for (const spot of [[15, 23, 2.2], [25, 15, 1.8], [26, 30, 2.4]]) {
+                    ctx.beginPath()
+                    ctx.arc(spot[0], spot[1], spot[2], 0, 2 * Math.PI)
+                    ctx.fill()
+                }
+                if (eggTier === "uncommon") {
+                    ctx.fillStyle = "#e8fbff"
+                    ctx.beginPath()
+                    ctx.moveTo(34, 5); ctx.lineTo(36, 9); ctx.lineTo(40, 11)
+                    ctx.lineTo(36, 13); ctx.lineTo(34, 17); ctx.lineTo(32, 13)
+                    ctx.lineTo(28, 11); ctx.lineTo(32, 9); ctx.closePath(); ctx.fill()
+                } else if (eggTier === "rare") {
+                    ctx.fillStyle = "#ffd96a"
+                    ctx.beginPath()
+                    ctx.moveTo(34, 3); ctx.lineTo(36, 8); ctx.lineTo(41, 10)
+                    ctx.lineTo(36, 12); ctx.lineTo(34, 17); ctx.lineTo(32, 12)
+                    ctx.lineTo(27, 10); ctx.lineTo(32, 8); ctx.closePath(); ctx.fill()
+                }
+                ctx.restore()
+            }
+        }
+    }
+
+    component RepresentativeCheck: Rectangle {
+        required property string label
+        implicitWidth: 26
+        implicitHeight: 26
+        radius: 13
+        color: root.successColor
+        border.color: root.panelColor
+        border.width: 2
+        Accessible.name: label
+        Canvas {
+            anchors.centerIn: parent
+            width: 14
+            height: 14
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                ctx.strokeStyle = "#ffffff"
+                ctx.lineWidth = 2.2
+                ctx.lineCap = "round"
+                ctx.lineJoin = "round"
+                ctx.beginPath()
+                ctx.moveTo(2, 7)
+                ctx.lineTo(6, 11)
+                ctx.lineTo(12, 3)
+                ctx.stroke()
+            }
+        }
+        HoverHandler { id: representativeHover }
+        ToolTip.visible: representativeHover.hovered
+        ToolTip.text: label
     }
 
     component Panel: Rectangle {
@@ -549,7 +657,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 40
                     spacing: 8
-                    PokeBall { Layout.preferredWidth: 24; Layout.preferredHeight: 24 }
+                    PokeBall { objectName: "brandMark"; Layout.preferredWidth: 26; Layout.preferredHeight: 26 }
                     Text {
                         text: "PokeTokenBar"
                         color: root.textColor
@@ -857,17 +965,27 @@ Rectangle {
                         Repeater {
                             model: appModel.dexEntries
                             Panel {
+                                id: dexCard
                                 required property var modelData
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: modelData.hasShiny ? 210 : 174
+                                border.color: modelData.representative
+                                    ? root.successColor
+                                    : (dexCardButton.hovered ? root.accentColor : root.borderColor)
+                                border.width: modelData.representative || dexCardButton.hovered ? 2 : 1
                                 Button {
+                                    id: dexCardButton
                                     anchors.fill: parent
                                     activeFocusOnTab: true
                                     Accessible.name: root.format(appModel.strings.dex_open, {name: modelData.name})
+                                    Accessible.description: modelData.representative
+                                        ? (modelData.followingCurrent ? appModel.strings.following_current : appModel.strings.representative_selected)
+                                        : ""
                                     Accessible.role: Accessible.Button
                                     onClicked: root.openDex(modelData.speciesId)
                                     background: Item { }
                                     contentItem: Item { }
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                                     FocusFrame { }
                                 }
                                 ColumnLayout {
@@ -890,6 +1008,17 @@ Rectangle {
                                         onClicked: appModel.toggleDexVariant(modelData.speciesId)
                                     }
                                 }
+                                RepresentativeCheck {
+                                    objectName: "representativeBadge"
+                                    visible: modelData.representative
+                                    anchors.top: parent.top
+                                    anchors.right: parent.right
+                                    anchors.margins: 8
+                                    z: 4
+                                    label: modelData.followingCurrent
+                                        ? appModel.strings.following_current
+                                        : appModel.strings.representative_selected
+                                }
                             }
                         }
                     }
@@ -909,7 +1038,7 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: 14
                         Layout.rightMargin: 14
-                        Layout.preferredHeight: 342
+                        Layout.preferredHeight: appModel.representativeFollowsCurrent ? 388 : 426
                         ColumnLayout {
                             anchors.fill: parent
                             anchors.margins: 16
@@ -961,6 +1090,35 @@ Rectangle {
                                 text: appModel.strings[root.selectedDex.rarity] || ""
                                 color: root.mutedColor
                                 font.pixelSize: 13
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 5
+                                AppButton {
+                                    objectName: "dexRepresentativeButton"
+                                    Layout.fillWidth: true
+                                    highlighted: !!root.selectedDex.representative
+                                    text: root.selectedDex.representative
+                                        ? (root.selectedDex.followingCurrent
+                                            ? appModel.strings.following_current
+                                            : appModel.strings.representative_selected)
+                                        : appModel.strings.set_representative
+                                    accessibleName: text
+                                    onClicked: {
+                                        if (!root.selectedDex.representative)
+                                            appModel.chooseDexRepresentative(
+                                                root.selectedDex.speciesId,
+                                                !!root.selectedDex.showShiny
+                                            )
+                                    }
+                                }
+                                AppButton {
+                                    objectName: "followCurrentRepresentativeButton"
+                                    visible: !appModel.representativeFollowsCurrent
+                                    Layout.fillWidth: true
+                                    text: appModel.strings.follow_companion
+                                    onClicked: appModel.followCurrentRepresentative()
+                                }
                             }
                         }
                     }
@@ -1074,10 +1232,11 @@ Rectangle {
                         WalletBadge { }
                     }
                     GridLayout {
+                        id: bagGrid
                         Layout.fillWidth: true
                         Layout.leftMargin: 14
                         Layout.rightMargin: 14
-                        columns: width > 560 ? 2 : 1
+                        columns: width > 740 ? 2 : 1
                         columnSpacing: 8
                         rowSpacing: 8
                         Panel {
@@ -1085,12 +1244,16 @@ Rectangle {
                             Layout.preferredHeight: 126
                             RowLayout {
                                 anchors.fill: parent; anchors.margins: 12; spacing: 12
-                                Text { text: "🍬"; font.pixelSize: 36 }
+                                Item {
+                                    Layout.preferredWidth: 54
+                                    Layout.preferredHeight: 54
+                                    Text { anchors.centerIn: parent; text: "🍬"; font.pixelSize: 36 }
+                                }
                                 ColumnLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.rare_candy; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
+                                    Text { text: appModel.strings.rare_candy; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
                                     Text { text: root.format(appModel.strings.available_count, {count: appModel.rareCandyCount}); color: root.mutedColor; font.pixelSize: 12 }
-                                    AppButton { text: appModel.strings.use_on_companion; enabled: appModel.rareCandyCount > 0; onClicked: appModel.useItem("rare_candy") }
+                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.use_on_companion; enabled: appModel.rareCandyCount > 0; onClicked: appModel.useItem("rare_candy") }
                                 }
                             }
                         }
@@ -1099,25 +1262,33 @@ Rectangle {
                             Layout.preferredHeight: 126
                             RowLayout {
                                 anchors.fill: parent; anchors.margins: 12; spacing: 12
-                                Text { text: "🌿"; font.pixelSize: 36 }
+                                Item {
+                                    Layout.preferredWidth: 54
+                                    Layout.preferredHeight: 54
+                                    Text { anchors.centerIn: parent; text: "🌿"; font.pixelSize: 36 }
+                                }
                                 ColumnLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.mint; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
+                                    Text { text: appModel.strings.mint; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
                                     Text { text: root.format(appModel.strings.available_count, {count: appModel.mintCount}); color: root.mutedColor; font.pixelSize: 12 }
-                                    AppButton { text: appModel.strings.change_nature; enabled: appModel.mintCount > 0; onClicked: appModel.useItem("mint") }
+                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.change_nature; enabled: appModel.mintCount > 0; onClicked: appModel.useItem("mint") }
                                 }
                             }
                         }
                         Panel {
                             Layout.fillWidth: true
-                            Layout.columnSpan: width > 560 ? 2 : 1
-                            Layout.preferredHeight: 90
+                            Layout.columnSpan: bagGrid.columns
+                            Layout.preferredHeight: 126
                             RowLayout {
                                 anchors.fill: parent; anchors.margins: 12; spacing: 12
-                                Text { text: "✨"; font.pixelSize: 30 }
+                                Item {
+                                    Layout.preferredWidth: 54
+                                    Layout.preferredHeight: 54
+                                    Text { anchors.centerIn: parent; text: "✨"; font.pixelSize: 30 }
+                                }
                                 ColumnLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.shiny_charm; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
+                                    Text { text: appModel.strings.shiny_charm; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
                                     Text { text: appModel.shinyCharmActive ? appModel.strings.charm_active : appModel.strings.charm_inactive; color: appModel.shinyCharmActive ? root.successColor : root.mutedColor; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                                 }
                             }
@@ -1158,8 +1329,44 @@ Rectangle {
                                     anchors.fill: parent
                                     anchors.margins: 12
                                     spacing: 4
-                                    Text { text: modelData.icon; font.pixelSize: 30 }
-                                    Text { text: modelData.title; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
+                                    Item {
+                                        Layout.preferredWidth: 46
+                                        Layout.preferredHeight: 46
+                                        Text {
+                                            visible: modelData.kind !== "egg"
+                                            anchors.centerIn: parent
+                                            text: modelData.icon
+                                            font.pixelSize: 30
+                                        }
+                                        EggIcon {
+                                            objectName: "shopEggIcon-" + modelData.key
+                                            visible: modelData.kind === "egg"
+                                            anchors.centerIn: parent
+                                            width: 42
+                                            height: 42
+                                            tier: modelData.eggTier
+                                        }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+                                        Text { text: modelData.title; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
+                                        Rectangle {
+                                            visible: modelData.kind === "egg" && modelData.key !== "normal"
+                                            implicitHeight: 18
+                                            implicitWidth: eggRarityLabel.implicitWidth + 12
+                                            radius: 9
+                                            color: modelData.key === "rare" ? "#7b4bc4" : "#2f7fca"
+                                            Text {
+                                                id: eggRarityLabel
+                                                anchors.centerIn: parent
+                                                text: (appModel.strings[modelData.key] || "").toUpperCase()
+                                                color: "#ffffff"
+                                                font.pixelSize: 9
+                                                font.weight: Font.Bold
+                                            }
+                                        }
+                                    }
                                     Text { text: modelData.subtitle; color: root.mutedColor; font.pixelSize: 11; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                                     Item { Layout.fillHeight: true }
                                     AppButton {

@@ -48,6 +48,8 @@ The default automatic refresh is every five minutes. Each refresh scans local us
 
 GitHub Actions builds a Windows artifact containing `PokeTokenBar-Windows.exe`. Extract the complete application folder, including `_internal`, and run the EXE; it does not need a console window.
 
+The Start automatically with Windows setting registers a tray-only launch: the main window stays closed until opened from the tray or desktop pet. The floating pet follows its saved visibility setting. An interactive EXE launch opens the main window. An existing startup registration is upgraded to tray-only mode only when it points to that same executable.
+
 Quit an existing instance from its tray menu before launching another build. Builds use the same save and settings by default and do not coordinate concurrent writes. Set `PTB_STATE_DIR` to a separate folder to test another instance with an isolated save and settings.
 
 ### From source

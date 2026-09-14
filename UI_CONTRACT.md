@@ -25,7 +25,10 @@ This document records user-visible behavior that must survive visual redesigns a
 - Pokédex cards use most of their image area. Selecting a card opens that companion as a large animated sprite; Previous and Next browse the full filtered collection across page boundaries, and Back restores the matching grid page.
 - Catch history shows one large sprite per evolution stage, arrows between stages, a sentence stating whether the line is complete, clear ownership labels, and the active Raising badge aligned to the right. The header does not duplicate the current stage sprite.
 - The desktop representative setting belongs to the Desktop pet group and explains that it controls the tray icon and floating desktop pet.
-- Representative choices include the Pokédex number and name. Following the active companion remains an explicit option.
+- Representative choices include the Pokédex number and name. The Pokédex marks the current desktop representative and lets a collected variant become the representative from its animated detail view. Following the active companion remains an explicit option there and in Settings.
+- Capture summaries describe completion or stage without repeating the Pokémon name already shown in the card.
+- Bag icons and text share the same left edge at narrow widths. All egg tiers use one egg silhouette with escalating colors and rarity cues rather than unrelated circle symbols.
+- A Windows login launch stays in the tray; the floating pet follows its saved preference and the main window opens only on a manual action. An existing login command is upgraded only when it points to the same executable.
 - The single language setting controls the interface, Pokémon names, tray tooltip and context menu, desktop pet tooltip and context menu, and limit notifications.
 - Settings provide a short tooltip and accessible description for every non-obvious control. Reset format calls the countdown option Time remaining rather than Time.
 - Dark mode controls and secondary text retain readable contrast; combo boxes and numeric selectors use the same panel palette as the rest of the interface.
