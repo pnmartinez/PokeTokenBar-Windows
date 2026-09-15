@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -344,6 +345,41 @@ class QmlKeyboardTests(unittest.TestCase):
         self.root.setProperty("currentPage", 0)
         QTest.qWait(10)
         self.assertFalse(wallet.isVisible())
+
+    def test_maximize_glyph_tracks_window_state_in_both_directions(self):
+        glyph = self.root.findChild(QObject, "maximizeWindowButtonGlyph")
+        self.assertIsNotNone(glyph)
+        self.assertEqual(glyph.property("renderedKind"), "maximize")
+
+        def rendered_glyph():
+            image = self.window.quick.grabFramebuffer()
+            point = glyph.mapToItem(self.root, 0, 0)
+            ratio = image.devicePixelRatio()
+            return image.copy(
+                round(point.x() * ratio), round(point.y() * ratio),
+                round(glyph.width() * ratio), round(glyph.height() * ratio),
+            )
+
+        maximize_image = rendered_glyph()
+        self.window.view_model.toggleMaximizeWindow()
+        QTest.qWait(30)
+        self.assertTrue(self.window.isMaximized())
+        self.assertEqual(glyph.property("renderedKind"), "restore")
+        self.assertNotEqual(rendered_glyph(), maximize_image)
+        self.window.view_model.toggleMaximizeWindow()
+        QTest.qWait(30)
+        self.assertFalse(self.window.isMaximized())
+        self.assertEqual(glyph.property("renderedKind"), "maximize")
+
+    def test_title_drag_delegates_to_system_even_when_maximized(self):
+        handle = Mock()
+        handle.startSystemMove.return_value = True
+        self.window.showMaximized()
+        QTest.qWait(30)
+        self.assertTrue(self.window.isMaximized())
+        with patch.object(QmlMainWindow, "windowHandle", return_value=handle):
+            self.window.view_model.startWindowMove()
+        handle.startSystemMove.assert_called_once_with()
 
     def test_navigation_exposes_page_descriptions_without_page_heading_rows(self):
         labels = [

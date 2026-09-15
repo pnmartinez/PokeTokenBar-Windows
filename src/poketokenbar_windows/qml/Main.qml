@@ -470,6 +470,9 @@ Rectangle {
         ToolTip.text: helpText
         contentItem: Canvas {
             id: windowGlyph
+            objectName: windowControl.objectName + "Glyph"
+            property string renderedKind: windowControl.iconKind
+            onRenderedKindChanged: requestPaint()
             implicitWidth: 16
             implicitHeight: 16
             property color strokeColor: windowControl.closeStyle && windowControl.hovered
@@ -482,14 +485,14 @@ Rectangle {
                 ctx.lineWidth = 1
                 ctx.lineCap = "square"
                 ctx.lineJoin = "miter"
-                if (windowControl.iconKind === "minimize") {
+                if (renderedKind === "minimize") {
                     ctx.beginPath()
                     ctx.moveTo(3.5, 11.5)
                     ctx.lineTo(12.5, 11.5)
                     ctx.stroke()
-                } else if (windowControl.iconKind === "maximize") {
+                } else if (renderedKind === "maximize") {
                     ctx.strokeRect(3.5, 3.5, 9, 9)
-                } else if (windowControl.iconKind === "restore") {
+                } else if (renderedKind === "restore") {
                     ctx.strokeRect(3.5, 5.5, 7, 7)
                     ctx.beginPath()
                     ctx.moveTo(5.5, 5.5)

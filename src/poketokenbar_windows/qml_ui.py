@@ -1181,7 +1181,7 @@ class QmlMainWindow(QMainWindow):
 
     def _start_system_move(self) -> None:
         handle = self.windowHandle()
-        if handle is not None and not self.isMaximized():
+        if handle is not None:
             handle.startSystemMove()
 
     def _start_system_resize(self, edges: int) -> None:
