@@ -19,11 +19,13 @@ from poketokenbar_windows.models import (
     LimitWindow,
     ProviderLimits,
     ProviderUsage,
+    RateLimitResetCredit,
     UsageSnapshot,
 )
 from poketokenbar_windows.pokemon import EGG_HATCH_THRESHOLD, RARE_CANDY_XP
 from poketokenbar_windows.floating_pet import (
     AnimatedSpriteFrameStabilizer,
+    FloatingPetController,
     FloatingPetWindow,
     HoverCallout,
 )
@@ -80,8 +82,39 @@ class UITests(unittest.TestCase):
         self.app.processEvents()
 
         self.assertEqual(window.quick.status(), QQuickWidget.Status.Ready)
-        self.assertIsNotNone(window.quick.rootObject())
-        self.assertGreaterEqual(window.minimumWidth(), 820)
+        root = window.quick.rootObject()
+        self.assertIsNotNone(root)
+        self.assertIsNotNone(root.findChild(QObject, "topNavigation"))
+        self.assertIsNotNone(root.findChild(QObject, "homePage"))
+        self.assertEqual(window.minimumWidth(), 520)
+        self.assertEqual(window.minimumHeight(), 640)
+        self.assertEqual((window.width(), window.height()), (560, 740))
+
+    def test_qml_home_has_no_page_level_scroll_and_lists_only_overflow_as_needed(self):
+        qml = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "poketokenbar_windows"
+            / "qml"
+            / "Main.qml"
+        ).read_text(encoding="utf-8")
+        home_block = qml[
+            qml.index('id: homePage') : qml.index('id: collectionPage')
+        ]
+        self.assertIn(
+            'Item {\n                id: homePage',
+            qml,
+        )
+        self.assertIn("id: providersList", home_block)
+        self.assertIn("id: limitsContent", home_block)
+        self.assertIn(
+            "providersList.contentHeight > providersList.height",
+            home_block,
+        )
+        self.assertIn(
+            "limitsContent.contentHeight > limitsContent.height",
+            home_block,
+        )
 
     def test_qml_shell_exposes_restored_settings_and_collection_controls(self):
         window = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
@@ -101,6 +134,17 @@ class UITests(unittest.TestCase):
         pet_size = root.findChild(QObject, "petSizeSlider")
         self.assertIsNotNone(pet_size)
         self.assertEqual(pet_size.property("from"), 48.0)
+
+        representative = root.findChild(QObject, "representativeCombo")
+        desktop_panel = root.findChild(QObject, "desktopPetPanel")
+        general_panel = root.findChild(QObject, "generalSettingsPanel")
+        ancestors = []
+        parent = representative.parent()
+        while parent is not None:
+            ancestors.append(parent)
+            parent = parent.parent()
+        self.assertIn(desktop_panel, ancestors)
+        self.assertNotIn(general_panel, ancestors)
 
     def test_qml_view_model_renders_usage_limits_and_companion_progress(self):
         state = GameState(egg_usage=EGG_HATCH_THRESHOLD // 2)
@@ -123,6 +167,8 @@ class UITests(unittest.TestCase):
 
         self.assertEqual(model.todayTokens, "1.5M")
         self.assertEqual(model.companionProgress, 50)
+        self.assertEqual(model.companionProgressText, "2.5M / 5M")
+        self.assertEqual(model.companionLevelText, "Lv. 50")
         self.assertEqual(model.providers[0]["name"], "Codex")
         self.assertEqual(model.limits[0]["percentText"], "75% used")
 
@@ -143,7 +189,7 @@ class UITests(unittest.TestCase):
 
         model.render(result)
         self.assertEqual(model.limits[0]["urgency"], "warning")
-        self.assertIn("Reinicia in", model.limits[0]["reset"])
+        self.assertIn("resets in", model.limits[0]["reset"])
 
         model.setPreference("limitTimeMode", "datetime")
         model.setPreference("warningThreshold", 95)
@@ -152,8 +198,126 @@ class UITests(unittest.TestCase):
         self.assertEqual(model.limitTimeMode, "datetime")
         self.assertEqual(model.criticalThreshold, 100)
         self.assertEqual(model.limits[0]["urgency"], "neutral")
-        self.assertNotIn("Reinicia in", model.limits[0]["reset"])
+        self.assertNotIn("resets in", model.limits[0]["reset"])
         self.assertEqual(self.settings.value("limit_time_display_mode"), "datetime")
+
+    def test_qml_supports_english_spanish_and_galician_as_full_ui_languages(self):
+        states = (
+            (GameState(language="en", egg_usage=2_500_000), "Home", "Lv. 50"),
+            (GameState(language="es", egg_usage=2_500_000), "Inicio", "Nv. 50"),
+            (GameState(language="gl", egg_usage=2_500_000), "Inicio", "Nv. 50"),
+        )
+        for state, home_label, level in states:
+            with self.subTest(language=state.language):
+                model = QmlViewModel(state, self.settings, FakeUIAPI())
+                self.assertEqual(model.strings["nav_home"], home_label)
+                self.assertEqual(model.companionLevelText, level)
+                self.assertEqual(
+                    [option["key"] for option in model.languageOptions],
+                    ["en", "es", "gl"],
+                )
+
+    def test_qml_restores_forecasts_for_all_timed_limits_and_reset_credits(self):
+        now = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
+        limits = ProviderLimits(
+            "codex",
+            plan="Plus",
+            windows=[
+                LimitWindow(
+                    "5-hour",
+                    75,
+                    now + timedelta(hours=2),
+                    duration_minutes=300,
+                ),
+                LimitWindow(
+                    "Weekly",
+                    50,
+                    now + timedelta(days=5),
+                    duration_minutes=7 * 24 * 60,
+                ),
+            ],
+            reset_credits_available=3,
+            reset_credits=[
+                RateLimitResetCredit(expires_at=now + timedelta(days=2))
+            ],
+        )
+        model = QmlViewModel(GameState(), self.settings, FakeUIAPI())
+        model.render(
+            RefreshResult(
+                UsageSnapshot(scanned_at=now),
+                {"codex": limits},
+                {},
+                GameState(),
+                [],
+                None,
+                "Pokemon Egg",
+            )
+        )
+
+        windows = [row for row in model.limits if row["kind"] == "window"]
+        credit = next(row for row in model.limits if row["kind"] == "credit")
+        self.assertFalse(any(row["kind"] == "unavailable" for row in model.limits))
+        self.assertEqual(len(windows), 2)
+        self.assertTrue(all(row["forecast"] for row in windows))
+        self.assertIn("3 resets available", credit["label"])
+        self.assertIn("first expires", credit["label"])
+
+        self.settings.setValue("limits_forecast_enabled", False)
+        model.render(
+            RefreshResult(
+                UsageSnapshot(scanned_at=now),
+                {"codex": limits},
+                {},
+                GameState(),
+                [],
+                None,
+                "Pokemon Egg",
+            )
+        )
+        self.assertTrue(
+            all(
+                not row["forecast"]
+                for row in model.limits
+                if row["kind"] == "window"
+            )
+        )
+
+    def test_qml_representative_choices_include_pokedex_numbers(self):
+        state = GameState(
+            mon=MonState(1, [1, 2], 0, 0, "common", False, "Hardy"),
+            catches=[
+                CatchRecord(1, 1, [1, 2], "common", False, "Hardy", "2026-09-01")
+            ],
+        )
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+
+        self.assertEqual(model.collection[0]["display"], "Follow active companion")
+        self.assertTrue(any(row["display"].startswith("#001 ") for row in model.collection[1:]))
+        self.assertTrue(model.dexEntries[0]["representative"])
+        self.assertTrue(model.dexEntries[0]["followingCurrent"])
+        selections = []
+        model.representativeChanged.connect(selections.append)
+        model.chooseDexRepresentative(1, False)
+        model.followCurrentRepresentative()
+        self.assertEqual(selections, [(1, False), None])
+
+    def test_qml_dex_marks_the_selected_representative_variant(self):
+        state = GameState(
+            mon=MonState(1, [1, 2], 0, 0, "common", False, "Hardy"),
+            catches=[
+                CatchRecord(1, 1, [1, 2], "common", True, "Hardy", "2026-09-01")
+            ],
+            representative_species_id=1,
+            representative_is_shiny=True,
+        )
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+        self.assertFalse(model.representativeFollowsCurrent)
+        self.assertTrue(model.dexEntries[0]["showShiny"])
+        self.assertTrue(model.dexEntries[0]["representative"])
+        self.assertFalse(model.dexEntries[0]["followingCurrent"])
+
+        model.toggleDexVariant(1)
+        self.assertFalse(model.dexEntries[0]["representative"])
 
     def test_qml_dex_supports_paging_rarity_filters_and_shiny_variants(self):
         catches = [
@@ -172,7 +336,7 @@ class UITests(unittest.TestCase):
 
         self.assertEqual(model.dexPageCount, 2)
         self.assertEqual(len(model.dexEntries), 24)
-        self.assertIn("26 especies", model.dexSummary)
+        self.assertIn("26 species", model.dexSummary)
 
         model.setDexFilter("rare")
         self.assertEqual(model.dexPageCount, 1)
@@ -196,9 +360,13 @@ class UITests(unittest.TestCase):
         self.assertTrue(model.catches[0]["current"])
         self.assertEqual(
             [stage["status"] for stage in model.catches[0]["stages"]],
-            ["Obtenida", "Actual", "Futura"],
+            ["Previous form", "You have this", "Not owned"],
         )
         self.assertEqual(model.catches[0]["stages"][2]["name"], "???")
+        self.assertEqual(
+            model.catches[0]["description"],
+            "Only stage 2 of 3",
+        )
 
     def test_legacy_desktop_pet_preferences_migrate_without_overwriting_current_values(self):
         self.settings.setValue("pet_visible", True)
@@ -494,6 +662,28 @@ class UITests(unittest.TestCase):
         self.assertEqual(pet.loading_timer.interval(), 90)
         pet.close()
 
+    def test_reenabling_desktop_pet_replays_pokeball_reveal(self):
+        controller = FloatingPetController(self.app, self.settings, lambda: None)
+        self.addCleanup(controller.shutdown)
+        result = RefreshResult(
+            UsageSnapshot(),
+            {},
+            {},
+            GameState(),
+            [],
+            None,
+            "Pokemon Egg",
+            pet_sprite_path=None,
+            pet_display_name="Pokemon Egg",
+            pet_is_egg=True,
+        )
+        controller.update(result)
+        self.assertFalse(controller.pet.reveal_timer.isActive())
+
+        controller.set_enabled(True)
+
+        self.assertTrue(controller.pet.reveal_timer.isActive())
+
     def test_floating_pet_menu_matches_tray_order_and_labels(self):
         pet = FloatingPetWindow(96)
         menu, actions = pet._build_context_menu()
@@ -504,6 +694,14 @@ class UITests(unittest.TestCase):
         self.assertTrue(actions["visibility"].isCheckable())
         self.assertTrue(actions["visibility"].isChecked())
         menu.close()
+
+        pet.language = "gl"
+        galician_menu, _ = pet._build_context_menu()
+        self.assertEqual(
+            [action.text() if not action.isSeparator() else None for action in galician_menu.actions()],
+            ["Abrir PokeTokenBar", "Amosar mascota no escritorio", "Actualizar", None, "Saír"],
+        )
+        galician_menu.close()
         pet.close()
 
     def test_limit_only_hover_keeps_a_readable_horizontal_shape(self):
@@ -641,20 +839,16 @@ class UITests(unittest.TestCase):
             ),
         )
 
-    def test_home_shows_luna_reserve_when_codex_omits_its_bucket(self):
+    def test_home_omits_luna_reserve_when_codex_does_not_report_it(self):
         now = datetime.now(timezone.utc)
         window = self._window()
         window.render(
             RefreshResult(
                 UsageSnapshot(scanned_at=now),
-                {
-                    "codex": ProviderLimits(
-                        "codex",
-                        windows=[
-                            LimitWindow("Weekly", 17, now + timedelta(days=6))
-                        ],
-                    )
-                },
+                {"codex": ProviderLimits(
+                    "codex",
+                    windows=[LimitWindow("Weekly", 17, now + timedelta(days=6))],
+                )},
                 {},
                 GameState(),
                 [],
@@ -662,11 +856,13 @@ class UITests(unittest.TestCase):
                 "Pokemon Egg",
             )
         )
-
-        reserve_widget = window.limits_list.itemWidget(window.limits_list.item(1))
-        reserve_title = reserve_widget.findChild(QLabel).text()
-        self.assertEqual(reserve_title, "Codex · Luna Reserve · unavailable")
-        self.assertIsNone(reserve_widget.findChild(QProgressBar))
+        titles = [
+            label.text()
+            for index in range(window.limits_list.count())
+            if (widget := window.limits_list.itemWidget(window.limits_list.item(index)))
+            for label in widget.findChildren(QLabel)
+        ]
+        self.assertFalse(any("Luna Reserve" in title for title in titles))
 
     def test_offline_refresh_still_emits_a_renderable_result(self):
         controller = TrayController.__new__(TrayController)
@@ -748,6 +944,21 @@ class UITests(unittest.TestCase):
         text = tray_tooltip(result, show_tokens=False, show_cost=True, show_limit=False)
         self.assertNotIn("1.5M", text)
         self.assertIn("$2.50", text)
+
+    def test_tray_shows_official_limit_with_zero_local_tokens_today(self):
+        snapshot = UsageSnapshot(
+            providers={"codex": ProviderUsage("codex", today_tokens=0)}
+        )
+        limits = {"codex": ProviderLimits(
+            "codex",
+            windows=[LimitWindow("Weekly", 92)],
+        )}
+        result = RefreshResult(
+            snapshot, limits, {}, GameState(language="gl"), [], None, "Pokemon Egg"
+        )
+        text = tray_tooltip(result, limit_display_mode="remaining")
+        self.assertIn("Codex Semanal: 8% restante", text)
+        self.assertIn("Nv. 0", text)
 
     def test_light_dark_and_system_themes_share_accessibility_rules(self):
         for theme in ("system", "light", "dark"):

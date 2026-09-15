@@ -136,8 +136,8 @@ def gui_python() -> Path:
 def startup_command() -> str:
     """Command stored in HKCU Run. Prefer a frozen GUI exe, then console-free Python."""
     if getattr(sys, "frozen", False):
-        return f'"{Path(sys.executable)}"'
-    return f'"{gui_python()}" -m poketokenbar_windows'
+        return f'"{Path(sys.executable)}" --background'
+    return f'"{gui_python()}" -m poketokenbar_windows --background'
 
 
 def autostart_enabled() -> bool:
@@ -166,6 +166,27 @@ def set_autostart(enabled: bool) -> None:
                 winreg.DeleteValue(key, REGISTRY_VALUE_NAME)
             except FileNotFoundError:
                 pass
+
+
+def refresh_autostart_registration() -> None:
+    """Upgrade this executable's old login entry without claiming another build."""
+    if os.name != "nt":
+        return
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as key:
+            command, kind = winreg.QueryValueEx(key, REGISTRY_VALUE_NAME)
+        if kind != winreg.REG_SZ:
+            return
+        if getattr(sys, "frozen", False):
+            old_command = f'"{Path(sys.executable)}"'
+        else:
+            old_command = f'"{gui_python()}" -m poketokenbar_windows'
+        if str(command).strip().casefold() == old_command.casefold():
+            set_autostart(True)
+    except OSError:
+        pass
 
 
 def apply_native_window_icon(hwnd: int, ico_path: Path) -> None:

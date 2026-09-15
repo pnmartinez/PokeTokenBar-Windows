@@ -75,7 +75,6 @@ from .formatting import (
     compact_tokens,
     format_limit_event_time,
     highest_relevant_limit,
-    is_reserve_window,
     limit_alert_body,
     limit_forecast,
     limit_forecast_unavailable_reason,
@@ -100,6 +99,7 @@ from .floating_pet import (
     FloatingPetController,
 )
 from .limits import fetch_all_limits
+from .localization import localize_surface, text as translated_text
 from .models import ProviderLimits, UsageSnapshot
 from .notifications import (
     COMPANION_NOTIFICATIONS_KEY,
@@ -243,7 +243,7 @@ def tray_tooltip(
             )
     if show_limit and warnings:
         parts.append(min(warnings, key=lambda item: item[0])[1])
-    return f"{APP_NAME} · {' · '.join(parts)}"
+    return localize_surface(f"{APP_NAME} · {' · '.join(parts)}", result.state.language)
 
 
 def theme_stylesheet(theme: str) -> str:
@@ -1401,18 +1401,6 @@ class MainWindow(QMainWindow):
                 item.setSizeHint(widget.sizeHint())
                 self.limits_list.addItem(item)
                 self.limits_list.setItemWidget(item, widget)
-            if key.lower() == "codex" and not any(
-                is_reserve_window(window) for window in ordered_windows
-            ):
-                any_limits = True
-                item = QListWidgetItem()
-                widget = self._unavailable_limit_widget(
-                    label,
-                    "Luna Reserve",
-                )
-                item.setSizeHint(widget.sizeHint())
-                self.limits_list.addItem(item)
-                self.limits_list.setItemWidget(item, widget)
             for row in rows[len(ordered_windows):]:
                 any_limits = True
                 item = QListWidgetItem(row.text)
@@ -2020,7 +2008,7 @@ class TrayController(QObject):
         self._apply_theme()
 
         self.tray = QSystemTrayIcon(_pokeball_icon(), self)
-        self.tray.setToolTip(f"{APP_NAME} · Loading usage and limits…")
+        self.tray.setToolTip(f"{APP_NAME} · {translated_text(self.state.language, 'loading')}")
         menu = QMenu()
         open_action = QAction(MENU_OPEN_LABEL, self)
         open_action.triggered.connect(self.show_window)
@@ -2036,6 +2024,14 @@ class TrayController(QObject):
         menu.addAction(refresh_action)
         menu.addSeparator()
         menu.addAction(quit_action)
+        self.tray_actions = {
+            "menu_open": open_action,
+            "menu_pet": self.pet_visibility_action,
+            "refresh": refresh_action,
+            "menu_quit": quit_action,
+        }
+        for key, action in self.tray_actions.items():
+            action.setText(translated_text(self.state.language, key))
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self._tray_activated)
         self.tray.show()
@@ -2051,6 +2047,7 @@ class TrayController(QObject):
             display_mode=self.limit_display_mode,
             time_mode=self.limit_time_mode,
         )
+        self.floating_pet.set_language(self.state.language)
         self.floating_pet.enabled_changed.connect(self._sync_pet_visibility)
         self.floating_pet.size_changed.connect(
             lambda size: self.window.sync_floating_pet_settings(size=size)
@@ -2195,7 +2192,7 @@ class TrayController(QObject):
     def _update_tray_presentation(self) -> None:
         if self.last_result is None:
             return
-        result = self.last_result
+        result = replace(self.last_result, state=self.state)
         tooltip = tray_tooltip(
             result,
             show_tokens=self.settings.value("tray_show_tokens", True, type=bool),
@@ -2276,6 +2273,13 @@ class TrayController(QObject):
             self.store.save(candidate)
             self.state = candidate
         self.window.set_state(candidate)
+        for key, action in self.tray_actions.items():
+            action.setText(translated_text(language, key))
+        self.floating_pet.set_language(language)
+        if self.last_result is not None:
+            self.last_result = replace(self.last_result, state=candidate)
+            self.window.render(self.last_result)
+        self._update_tray_presentation()
         self.refresh()
 
     def _export_state(self) -> None:
@@ -2326,7 +2330,8 @@ class TrayController(QObject):
     def show_window(self) -> None:
         if self.last_result is None:
             self.window_open_pending = True
-            self.tray.setToolTip(f"{APP_NAME} · Loading usage and limits…")
+            language = getattr(getattr(self, "state", None), "language", "en")
+            self.tray.setToolTip(f"{APP_NAME} · {translated_text(language, 'loading')}")
             return
         self._present_window(animate_reveal=not self.initial_reveal_played)
 
@@ -2434,7 +2439,7 @@ class TrayController(QObject):
         if self.limit_notifications_enabled:
             for alert in limit_alerts:
                 provider = PROVIDER_LABELS.get(alert.provider, alert.provider.title())
-                title = "Critical limit" if alert.severity == "critical" else "Limit warning"
+                title = localize_surface("Critical limit" if alert.severity == "critical" else "Limit warning", self.state.language)
                 icon = (
                     QSystemTrayIcon.MessageIcon.Critical
                     if alert.severity == "critical"
@@ -2442,12 +2447,12 @@ class TrayController(QObject):
                 )
                 self.tray.showMessage(
                     title,
-                    limit_alert_body(
+                    localize_surface(limit_alert_body(
                         provider,
                         alert.window_label,
                         alert.used_percent,
                         self.limit_display_mode,
-                    ),
+                    ), self.state.language),
                     icon,
                     6_000,
                 )
