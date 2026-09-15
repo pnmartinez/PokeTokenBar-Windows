@@ -938,7 +938,7 @@ Rectangle {
                                 spacing: 3
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: appModel.strings.current_companion; color: root.mutedColor; font.pixelSize: 10; font.letterSpacing: 1; Layout.fillWidth: true }
+                                    Text { objectName: "companionName"; text: appModel.companionName; color: root.textColor; font.pixelSize: 24; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true }
                                     AppButton {
                                         objectName: "homeRefreshButton"
                                         Layout.preferredHeight: 30
@@ -949,9 +949,8 @@ Rectangle {
                                         onClicked: appModel.requestRefresh()
                                     }
                                 }
-                                Text { text: appModel.companionName; color: root.textColor; font.pixelSize: 20; font.weight: Font.Medium; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text { text: appModel.companionSubtitle; color: root.mutedColor; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text { text: appModel.companionEvolutionText; color: root.mutedColor; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text { text: appModel.companionSubtitle; color: root.mutedColor; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text { objectName: "companionEvolution"; text: appModel.companionEvolutionText; color: appModel.darkMode ? "#96a5bc" : "#66758a"; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
                                 Item { Layout.fillHeight: true }
                                 RowLayout {
                                     Layout.fillWidth: true
