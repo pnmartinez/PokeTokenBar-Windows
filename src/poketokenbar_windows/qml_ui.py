@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,48 @@ from .pokemon import (
 from .state import GameState, companion_progress_percent, owned_representative_options
 from .usage import PROVIDER_LABELS
 from .windows import APP_NAME, autostart_enabled, set_autostart
+
+
+_WINDOWS_SNAP_STYLE = 0x00040000 | 0x00010000  # WS_THICKFRAME | WS_MAXIMIZEBOX
+
+
+def _enable_windows_snap(hwnd: int) -> bool:
+    """Restore the native sizing style required by Windows edge snapping."""
+    if os.name != "nt":
+        return True
+
+    import ctypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    get_style = user32.GetWindowLongPtrW
+    get_style.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    get_style.restype = ctypes.c_ssize_t
+    set_style = user32.SetWindowLongPtrW
+    set_style.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
+    set_style.restype = ctypes.c_ssize_t
+    set_position = user32.SetWindowPos
+    set_position.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_uint,
+    ]
+    set_position.restype = ctypes.c_bool
+
+    handle = ctypes.c_void_p(hwnd)
+    current = int(get_style(handle, -16))
+    desired = current | _WINDOWS_SNAP_STYLE
+    if desired != current:
+        ctypes.set_last_error(0)
+        previous = int(set_style(handle, -16, desired))
+        if previous == 0 and ctypes.get_last_error() != 0:
+            return False
+        # Recalculate the non-client area without moving or activating the window.
+        set_position(handle, None, 0, 0, 0, 0, 0x0037)
+    return (int(get_style(handle, -16)) & _WINDOWS_SNAP_STYLE) == _WINDOWS_SNAP_STYLE
 
 
 def _file_url(path: Path | None) -> str:
@@ -1112,6 +1155,7 @@ class QmlMainWindow(QMainWindow):
             raise RuntimeError(f"Could not load the QML interface:\n{details}")
         self.setCentralWidget(self.quick)
         self.statusBar().hide()
+        self.windows_snap_enabled = _enable_windows_snap(int(self.winId()))
 
         self.refresh_button = _ButtonProxy(self.view_model.set_refresh_enabled, self)
         self.refresh_status = _TextProxy(self.view_model.set_status, self)

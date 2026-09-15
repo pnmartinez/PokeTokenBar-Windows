@@ -33,10 +33,10 @@ This document records user-visible behavior that must survive visual redesigns a
 - The single language setting controls the interface, Pokémon names, tray tooltip and context menu, desktop pet tooltip and context menu, and limit notifications.
 - Settings provide a short tooltip and accessible description for every non-obvious control. Reset format calls the countdown option Time remaining rather than Time.
 - Dark mode controls and secondary text retain readable contrast; combo boxes and numeric selectors use the same panel palette as the rest of the interface.
-- The main window uses one integrated, theme-aware header with the app identity, status, native-equivalent minimize/maximize/close actions, drag, double-click maximize and edge resizing. It must not expose a separate light system title bar in dark mode.
+- The main window uses one integrated, theme-aware header with the app identity, status, native-equivalent minimize/maximize/close actions, drag, double-click maximize, edge resizing, and Windows snapping when dragged to a screen edge. It must not expose a separate light system title bar in dark mode.
 - Page descriptions live in the navigation tooltips and accessible descriptions instead of consuming a row inside every page.
-- Home keeps Refresh inside the companion card. The animated companion sits in a square frame with equal inner margins.
-- Collection presents its view switch and Pokédex filters as two levels inside one compact toolbar, so they read as related controls rather than unrelated selectors.
+- Home keeps Refresh inside the companion card. The animated companion sits in a large square frame with equal inner margins, and all progress content stays inside the card.
+- Collection presents Pokédex and Captures as primary tabs without an enclosing panel. Pokédex filters and page position share a secondary row because pagination applies to that filtered view.
 - Bag and Shop share the same slim wallet strip in the same position so the balance feels persistent while switching between them.
 - Body copy must remain readable at the minimum window size. Ordinary labels are at least 12 px where the layout permits it; captions and metadata are at least 10 px.
 

@@ -457,10 +457,10 @@ Rectangle {
 
     component WindowButton: Button {
         id: windowControl
-        required property string glyph
+        required property string iconKind
         required property string helpText
         property bool closeStyle: false
-        implicitWidth: 40
+        implicitWidth: 46
         implicitHeight: 34
         activeFocusOnTab: true
         Accessible.name: helpText
@@ -468,12 +468,45 @@ Rectangle {
         ToolTip.visible: hovered || activeFocus
         ToolTip.delay: 500
         ToolTip.text: helpText
-        contentItem: Text {
-            text: windowControl.glyph
-            color: windowControl.closeStyle && windowControl.hovered ? "#ffffff" : root.textColor
-            font.pixelSize: windowControl.glyph === "—" ? 16 : 15
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
+        contentItem: Canvas {
+            id: windowGlyph
+            implicitWidth: 16
+            implicitHeight: 16
+            property color strokeColor: windowControl.closeStyle && windowControl.hovered
+                ? "#ffffff" : root.textColor
+            onStrokeColorChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                ctx.strokeStyle = strokeColor
+                ctx.lineWidth = 1
+                ctx.lineCap = "square"
+                ctx.lineJoin = "miter"
+                if (windowControl.iconKind === "minimize") {
+                    ctx.beginPath()
+                    ctx.moveTo(3.5, 11.5)
+                    ctx.lineTo(12.5, 11.5)
+                    ctx.stroke()
+                } else if (windowControl.iconKind === "maximize") {
+                    ctx.strokeRect(3.5, 3.5, 9, 9)
+                } else if (windowControl.iconKind === "restore") {
+                    ctx.strokeRect(3.5, 5.5, 7, 7)
+                    ctx.beginPath()
+                    ctx.moveTo(5.5, 5.5)
+                    ctx.lineTo(5.5, 3.5)
+                    ctx.lineTo(12.5, 3.5)
+                    ctx.lineTo(12.5, 10.5)
+                    ctx.lineTo(10.5, 10.5)
+                    ctx.stroke()
+                } else {
+                    ctx.beginPath()
+                    ctx.moveTo(4, 4)
+                    ctx.lineTo(12, 12)
+                    ctx.moveTo(12, 4)
+                    ctx.lineTo(4, 12)
+                    ctx.stroke()
+                }
+            }
         }
         background: Rectangle {
             color: windowControl.closeStyle && windowControl.hovered
@@ -804,19 +837,19 @@ Rectangle {
                         Item { Layout.fillWidth: true }
                         WindowButton {
                             objectName: "minimizeWindowButton"
-                            glyph: "—"
+                            iconKind: "minimize"
                             helpText: appModel.strings.window_minimize
                             onClicked: appModel.minimizeWindow()
                         }
                         WindowButton {
                             objectName: "maximizeWindowButton"
-                            glyph: appModel.windowMaximized ? "❐" : "□"
+                            iconKind: appModel.windowMaximized ? "restore" : "maximize"
                             helpText: appModel.windowMaximized ? appModel.strings.window_restore : appModel.strings.window_maximize
                             onClicked: appModel.toggleMaximizeWindow()
                         }
                         WindowButton {
                             objectName: "closeWindowButton"
-                            glyph: "×"
+                            iconKind: "close"
                             helpText: appModel.strings.window_close
                             closeStyle: true
                             onClicked: appModel.closeWindow()
@@ -862,15 +895,15 @@ Rectangle {
                         id: companionPanel
                         objectName: "companionPanel"
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 142
+                        Layout.preferredHeight: 158
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 11
                             spacing: 12
                             Rectangle {
                                 objectName: "companionFrame"
-                                Layout.preferredWidth: 120
-                                Layout.preferredHeight: 120
+                                Layout.preferredWidth: 136
+                                Layout.preferredHeight: 136
                                 radius: 12
                                 color: root.accentSurface
                                 AnimatedImage {
@@ -922,7 +955,7 @@ Rectangle {
                                     Text { text: appModel.companionProgressText; color: root.textColor; font.pixelSize: 12; Layout.fillWidth: true }
                                     Text { text: appModel.companionLevelText; color: root.textColor; font.pixelSize: 15; font.weight: Font.Bold }
                                 }
-                                ModernProgress { Layout.fillWidth: true; value: appModel.companionProgress }
+                                ModernProgress { objectName: "companionProgressBar"; Layout.fillWidth: true; value: appModel.companionProgress }
                             }
                         }
                     }
@@ -1067,37 +1100,73 @@ Rectangle {
                     width: collectionPage.availableWidth
                     spacing: 10
                     Item { Layout.preferredHeight: 4 }
-                    Panel {
+                    ColumnLayout {
                         id: collectionToolbar
                         objectName: "collectionToolbar"
                         Layout.fillWidth: true
                         Layout.leftMargin: 14
                         Layout.rightMargin: 14
-                        Layout.preferredHeight: root.collectionMode === "dex" && root.selectedDexIndex < 0 ? 74 : 42
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 5
-                            spacing: 4
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                SegmentedControl {
-                                    objectName: "collectionModeControl"
-                                    options: [{label: appModel.strings.pokedex, value: "dex"}, {label: appModel.strings.catch_log, value: "catches"}]
-                                    currentValue: root.collectionMode
-                                    accessibleName: appModel.strings.collection_view
-                                    onSelected: value => root.collectionMode = value
-                                }
-                                Item { Layout.fillWidth: true }
-                                Text {
-                                    visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
-                                    text: root.format(appModel.strings.page, {page: appModel.dexPage, count: appModel.dexPageCount})
-                                    color: root.mutedColor
-                                    font.pixelSize: 11
+                        spacing: 5
+                        RowLayout {
+                            objectName: "collectionModeControl"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 34
+                            spacing: 14
+                            Repeater {
+                                model: [
+                                    {label: appModel.strings.pokedex, value: "dex"},
+                                    {label: appModel.strings.catch_log, value: "catches"}
+                                ]
+                                Button {
+                                    id: collectionTab
+                                    required property var modelData
+                                    checkable: true
+                                    checked: root.collectionMode === modelData.value
+                                    activeFocusOnTab: true
+                                    implicitHeight: 34
+                                    leftPadding: 4
+                                    rightPadding: 4
+                                    Accessible.name: appModel.strings.collection_view + ": " + modelData.label
+                                    Accessible.role: Accessible.PageTab
+                                    onClicked: root.collectionMode = modelData.value
+                                    contentItem: Text {
+                                        text: collectionTab.modelData.label
+                                        color: collectionTab.checked ? root.textColor : root.mutedColor
+                                        font.pixelSize: 12
+                                        font.weight: collectionTab.checked ? Font.DemiBold : Font.Normal
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    background: Item {
+                                        Rectangle {
+                                            visible: collectionTab.checked
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.bottom: parent.bottom
+                                            height: 3
+                                            radius: 2
+                                            color: root.accentColor
+                                        }
+                                        Rectangle {
+                                            visible: collectionTab.activeFocus
+                                            anchors.fill: parent
+                                            radius: 6
+                                            color: "transparent"
+                                            border.color: root.accentColor
+                                            border.width: 2
+                                        }
+                                    }
                                 }
                             }
+                            Item { Layout.fillWidth: true }
+                        }
+                        RowLayout {
+                            objectName: "dexFilterRow"
+                            visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            spacing: 8
                             Flow {
-                                visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 28
                                 spacing: 5
@@ -1110,6 +1179,13 @@ Rectangle {
                                         itemCount: modelData.count
                                     }
                                 }
+                            }
+                            Text {
+                                objectName: "dexPagePosition"
+                                text: root.format(appModel.strings.page, {page: appModel.dexPage, count: appModel.dexPageCount})
+                                color: root.mutedColor
+                                font.pixelSize: 11
+                                Layout.alignment: Qt.AlignVCenter
                             }
                         }
                     }

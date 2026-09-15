@@ -313,10 +313,15 @@ class QmlKeyboardTests(unittest.TestCase):
         frame = self.root.findChild(QObject, "companionFrame")
         animation = self.root.findChild(QObject, "companionAnimation")
         self.assertAlmostEqual(frame.width(), frame.height(), delta=0.5)
+        self.assertGreaterEqual(frame.width(), 136)
         self.assertAlmostEqual(frame.width() - animation.width(), 10, delta=0.5)
         self.assertAlmostEqual(frame.height() - animation.height(), 10, delta=0.5)
 
         companion_panel = self.root.findChild(QObject, "companionPanel")
+        progress = self.root.findChild(QObject, "companionProgressBar")
+        progress_position = progress.mapToItem(companion_panel, 0, 0)
+        self.assertGreaterEqual(progress_position.y(), 0)
+        self.assertLessEqual(progress_position.y() + progress.height(), companion_panel.height())
         refresh = self.root.findChild(QObject, "homeRefreshButton")
         ancestor = refresh.parentItem()
         while ancestor is not None and ancestor is not companion_panel:
@@ -352,6 +357,13 @@ class QmlKeyboardTests(unittest.TestCase):
             control = self.control(label)
             self.assertTrue(self.description(control), label)
         self.assertIsNotNone(self.root.findChild(QObject, "collectionToolbar"))
+        self.root.setProperty("currentPage", 1)
+        QTest.qWait(20)
+        filter_row = self.root.findChild(QObject, "dexFilterRow")
+        page_position = self.root.findChild(QObject, "dexPagePosition")
+        page_point = page_position.mapToItem(filter_row, 0, 0)
+        self.assertGreaterEqual(page_point.y(), -1)
+        self.assertLessEqual(page_point.y() + page_position.height(), filter_row.height() + 1)
 
     def test_companion_uses_animation_and_reveal_pokeball(self):
         animation = self.root.findChild(QObject, "companionAnimation")
