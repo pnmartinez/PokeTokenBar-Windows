@@ -935,7 +935,7 @@ Rectangle {
                             }
                             ColumnLayout {
                                 Layout.fillWidth: true
-                                spacing: 3
+                                spacing: 6
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Text { objectName: "companionName"; text: appModel.companionName; color: root.textColor; font.pixelSize: 24; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true }
@@ -1813,14 +1813,14 @@ Rectangle {
         }
     }
 
-    ResizeHandle { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; resizeEdges: 1; cursorShape: Qt.SizeHorCursor }
-    ResizeHandle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; resizeEdges: 4; cursorShape: Qt.SizeHorCursor }
-    ResizeHandle { anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: 5; resizeEdges: 2; cursorShape: Qt.SizeVerCursor }
-    ResizeHandle { anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; height: 5; resizeEdges: 8; cursorShape: Qt.SizeVerCursor }
-    ResizeHandle { anchors.left: parent.left; anchors.top: parent.top; width: 8; height: 8; resizeEdges: 3; cursorShape: Qt.SizeFDiagCursor }
-    ResizeHandle { anchors.right: parent.right; anchors.top: parent.top; width: 8; height: 8; resizeEdges: 6; cursorShape: Qt.SizeBDiagCursor }
-    ResizeHandle { anchors.left: parent.left; anchors.bottom: parent.bottom; width: 8; height: 8; resizeEdges: 9; cursorShape: Qt.SizeBDiagCursor }
-    ResizeHandle { anchors.right: parent.right; anchors.bottom: parent.bottom; width: 8; height: 8; resizeEdges: 12; cursorShape: Qt.SizeFDiagCursor }
+    ResizeHandle { objectName: "leftResizeHandle"; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 8; resizeEdges: Qt.LeftEdge; cursorShape: Qt.SizeHorCursor }
+    ResizeHandle { objectName: "rightResizeHandle"; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 8; resizeEdges: Qt.RightEdge; cursorShape: Qt.SizeHorCursor }
+    ResizeHandle { objectName: "topResizeHandle"; anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: 8; resizeEdges: Qt.TopEdge; cursorShape: Qt.SizeVerCursor }
+    ResizeHandle { objectName: "bottomResizeHandle"; anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; height: 8; resizeEdges: Qt.BottomEdge; cursorShape: Qt.SizeVerCursor }
+    ResizeHandle { objectName: "topLeftResizeHandle"; anchors.left: parent.left; anchors.top: parent.top; width: 12; height: 12; resizeEdges: Qt.TopEdge | Qt.LeftEdge; cursorShape: Qt.SizeFDiagCursor }
+    ResizeHandle { objectName: "topRightResizeHandle"; anchors.right: parent.right; anchors.top: parent.top; width: 12; height: 12; resizeEdges: Qt.TopEdge | Qt.RightEdge; cursorShape: Qt.SizeBDiagCursor }
+    ResizeHandle { objectName: "bottomLeftResizeHandle"; anchors.left: parent.left; anchors.bottom: parent.bottom; width: 12; height: 12; resizeEdges: Qt.BottomEdge | Qt.LeftEdge; cursorShape: Qt.SizeBDiagCursor }
+    ResizeHandle { objectName: "bottomRightResizeHandle"; anchors.right: parent.right; anchors.bottom: parent.bottom; width: 12; height: 12; resizeEdges: Qt.BottomEdge | Qt.RightEdge; cursorShape: Qt.SizeFDiagCursor }
 
     Rectangle {
         visible: appModel.feedbackText.length > 0

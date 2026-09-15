@@ -346,6 +346,30 @@ class QmlKeyboardTests(unittest.TestCase):
         QTest.qWait(10)
         self.assertFalse(wallet.isVisible())
 
+    def test_resize_handles_use_qt_edges_and_generous_hit_areas(self):
+        expected_edges = {
+            "leftResizeHandle": int(Qt.Edge.LeftEdge.value),
+            "rightResizeHandle": int(Qt.Edge.RightEdge.value),
+            "topResizeHandle": int(Qt.Edge.TopEdge.value),
+            "bottomResizeHandle": int(Qt.Edge.BottomEdge.value),
+            "topLeftResizeHandle": int((Qt.Edge.TopEdge | Qt.Edge.LeftEdge).value),
+            "topRightResizeHandle": int((Qt.Edge.TopEdge | Qt.Edge.RightEdge).value),
+            "bottomLeftResizeHandle": int((Qt.Edge.BottomEdge | Qt.Edge.LeftEdge).value),
+            "bottomRightResizeHandle": int((Qt.Edge.BottomEdge | Qt.Edge.RightEdge).value),
+        }
+        for object_name, edges in expected_edges.items():
+            with self.subTest(handle=object_name):
+                handle = self.root.findChild(QObject, object_name)
+                self.assertIsNotNone(handle)
+                self.assertEqual(handle.property("resizeEdges"), edges)
+                if "Left" in object_name or "Right" in object_name:
+                    self.assertGreaterEqual(handle.width(), 12)
+                    self.assertGreaterEqual(handle.height(), 12)
+                elif object_name in ("leftResizeHandle", "rightResizeHandle"):
+                    self.assertGreaterEqual(handle.width(), 8)
+                else:
+                    self.assertGreaterEqual(handle.height(), 8)
+
     def test_maximize_glyph_tracks_window_state_in_both_directions(self):
         glyph = self.root.findChild(QObject, "maximizeWindowButtonGlyph")
         self.assertIsNotNone(glyph)
