@@ -8,6 +8,8 @@ Rectangle {
     width: 560
     height: 740
     color: appModel.darkMode ? "#0d121b" : "#f4f7fb"
+    border.color: root.borderColor
+    border.width: 1
 
     property int currentPage: 0
     property string collectionMode: "dex"
@@ -453,15 +455,55 @@ Rectangle {
         }
     }
 
+    component WindowButton: Button {
+        id: windowControl
+        required property string glyph
+        required property string helpText
+        property bool closeStyle: false
+        implicitWidth: 40
+        implicitHeight: 34
+        activeFocusOnTab: true
+        Accessible.name: helpText
+        Accessible.role: Accessible.Button
+        ToolTip.visible: hovered || activeFocus
+        ToolTip.delay: 500
+        ToolTip.text: helpText
+        contentItem: Text {
+            text: windowControl.glyph
+            color: windowControl.closeStyle && windowControl.hovered ? "#ffffff" : root.textColor
+            font.pixelSize: windowControl.glyph === "—" ? 16 : 15
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+        background: Rectangle {
+            color: windowControl.closeStyle && windowControl.hovered
+                ? "#c42b1c"
+                : (windowControl.hovered ? root.panelAltColor : "transparent")
+        }
+    }
+
+    component ResizeHandle: MouseArea {
+        required property int resizeEdges
+        enabled: !appModel.windowMaximized
+        acceptedButtons: Qt.LeftButton
+        z: 100
+        onPressed: appModel.startWindowResize(resizeEdges)
+    }
+
     component NavButton: Button {
         id: nav
         required property int pageIndex
         required property string iconKind
+        required property string description
         checkable: true
         checked: root.currentPage === pageIndex
         activeFocusOnTab: true
         Accessible.name: nav.text
+        Accessible.description: nav.description
         Accessible.role: Accessible.PageTab
+        ToolTip.visible: nav.hovered || nav.activeFocus
+        ToolTip.delay: 550
+        ToolTip.text: nav.description
         implicitHeight: 38
         onClicked: root.currentPage = pageIndex
         background: Rectangle {
@@ -530,23 +572,7 @@ Rectangle {
         }
     }
 
-    component PageHeading: RowLayout {
-        required property string title
-        required property string subtitle
-        Layout.fillWidth: true
-        spacing: 10
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 1
-            Text {
-                text: subtitle
-                color: root.mutedColor
-                font.pixelSize: 12
-                elide: Text.ElideRight
-                Layout.fillWidth: true
-            }
-        }
-    }
+
 
     component ModernProgress: Rectangle {
         id: progressTrack
@@ -579,22 +605,26 @@ Rectangle {
         }
     }
 
-    component WalletBadge: Rectangle {
-        implicitWidth: 126
-        implicitHeight: 46
-        radius: 10
-        color: root.accentSurface
-        border.color: root.accentColor
+    component WalletBar: Rectangle {
+        implicitHeight: 38
+        color: root.panelColor
+        border.color: root.borderColor
         RowLayout {
             anchors.fill: parent
-            anchors.margins: 9
+            anchors.leftMargin: 14
+            anchors.rightMargin: 14
             spacing: 7
-            Text { text: "◉"; color: root.accentColor; font.pixelSize: 15 }
-            ColumnLayout {
-                spacing: 0
-                Text { text: appModel.strings.wallet; color: root.mutedColor; font.pixelSize: 10 }
-                Text { text: appModel.wallet; color: root.textColor; font.pixelSize: 15; font.weight: Font.DemiBold }
+            Rectangle {
+                Layout.preferredWidth: 18
+                Layout.preferredHeight: 18
+                radius: 9
+                color: root.accentSurface
+                border.color: root.accentColor
+                Text { anchors.centerIn: parent; text: "•"; color: root.accentColor; font.pixelSize: 14; font.weight: Font.Bold }
             }
+            Text { text: appModel.strings.wallet; color: root.mutedColor; font.pixelSize: 11 }
+            Item { Layout.fillWidth: true }
+            Text { text: appModel.wallet; color: root.textColor; font.pixelSize: 15; font.weight: Font.DemiBold }
         }
     }
 
@@ -623,6 +653,51 @@ Rectangle {
             Accessible.description: toggleRow.detail
             FocusFrame { }
             onToggled: toggleRow.changed(checked)
+        }
+    }
+
+    component FilterChip: Button {
+        id: chip
+        required property string filterKey
+        required property string label
+        required property int itemCount
+        checkable: true
+        checked: appModel.dexFilter === filterKey
+        activeFocusOnTab: true
+        implicitHeight: 28
+        implicitWidth: chipContent.implicitWidth + 18
+        Accessible.name: root.format(appModel.strings.filter_by, {label: label})
+        Accessible.role: Accessible.RadioButton
+        onClicked: appModel.setDexFilter(filterKey)
+        contentItem: RowLayout {
+            id: chipContent
+            spacing: 6
+            Text {
+                text: chip.label
+                color: chip.checked ? root.textColor : root.mutedColor
+                font.pixelSize: 11
+                font.weight: chip.checked ? Font.Medium : Font.Normal
+            }
+            Rectangle {
+                implicitWidth: Math.max(20, chipCount.implicitWidth + 10)
+                implicitHeight: 18
+                radius: 9
+                color: chip.checked ? root.accentColor : root.panelColor
+                Text {
+                    id: chipCount
+                    anchors.centerIn: parent
+                    text: chip.itemCount
+                    color: chip.checked ? "#ffffff" : root.mutedColor
+                    font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                }
+            }
+        }
+        background: Rectangle {
+            radius: 7
+            color: chip.checked ? root.accentSurface : "transparent"
+            border.color: chip.activeFocus ? root.accentColor : (chip.checked ? root.accentColor : root.borderColor)
+            border.width: chip.activeFocus || chip.checked ? 2 : 1
         }
     }
 
@@ -680,48 +755,94 @@ Rectangle {
         spacing: 0
 
         Rectangle {
+            id: shellHeader
             Layout.fillWidth: true
-            Layout.preferredHeight: 82
+            Layout.preferredHeight: 78
             color: root.panelColor
             border.color: root.borderColor
             ColumnLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
                 spacing: 0
-                RowLayout {
+                Item {
+                    id: customTitleBar
+                    objectName: "customTitleBar"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 40
-                    spacing: 8
-                    PokeBall { objectName: "brandMark"; Layout.preferredWidth: 26; Layout.preferredHeight: 26 }
-                    Text {
-                        text: "PokeTokenBar"
-                        color: root.textColor
-                        font.pixelSize: 15
-                        font.weight: Font.DemiBold
+                    Layout.preferredHeight: 36
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.LeftButton
+                        onPressed: appModel.startWindowMove()
+                        onDoubleClicked: appModel.toggleMaximizeWindow()
                     }
-                    Item { Layout.fillWidth: true }
-                    Rectangle { width: 7; height: 7; radius: 4; color: appModel.loading ? root.warningColor : root.successColor }
-                    Text {
-                        text: appModel.statusText
-                        color: root.mutedColor
-                        font.pixelSize: 10
-                        elide: Text.ElideRight
-                        Layout.maximumWidth: 150
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        spacing: 7
+                        PokeBall { objectName: "brandMark"; Layout.preferredWidth: 25; Layout.preferredHeight: 25 }
+                        Text {
+                            text: "PokeTokenBar"
+                            color: root.textColor
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                        }
+                        Rectangle {
+                            Layout.leftMargin: 5
+                            width: 7
+                            height: 7
+                            radius: 4
+                            color: appModel.loading ? root.warningColor : root.successColor
+                        }
+                        Text {
+                            text: appModel.statusText
+                            color: root.mutedColor
+                            font.pixelSize: 10
+                            elide: Text.ElideRight
+                            Layout.preferredWidth: Math.min(135, implicitWidth)
+                            Layout.minimumWidth: 62
+                            Layout.maximumWidth: 135
+                        }
+                        Item { Layout.fillWidth: true }
+                        WindowButton {
+                            objectName: "minimizeWindowButton"
+                            glyph: "—"
+                            helpText: appModel.strings.window_minimize
+                            onClicked: appModel.minimizeWindow()
+                        }
+                        WindowButton {
+                            objectName: "maximizeWindowButton"
+                            glyph: appModel.windowMaximized ? "❐" : "□"
+                            helpText: appModel.windowMaximized ? appModel.strings.window_restore : appModel.strings.window_maximize
+                            onClicked: appModel.toggleMaximizeWindow()
+                        }
+                        WindowButton {
+                            objectName: "closeWindowButton"
+                            glyph: "×"
+                            helpText: appModel.strings.window_close
+                            closeStyle: true
+                            onClicked: appModel.closeWindow()
+                        }
                     }
                 }
                 RowLayout {
                     objectName: "topNavigation"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 40
+                    Layout.leftMargin: 10
+                    Layout.rightMargin: 10
                     spacing: 2
-                    NavButton { pageIndex: 0; iconKind: "home"; text: appModel.strings.nav_home; Layout.fillWidth: true }
-                    NavButton { pageIndex: 1; iconKind: "collection"; text: appModel.strings.nav_collection; Layout.fillWidth: true }
-                    NavButton { pageIndex: 2; iconKind: "bag"; text: appModel.strings.nav_bag; Layout.fillWidth: true }
-                    NavButton { pageIndex: 3; iconKind: "shop"; text: appModel.strings.nav_shop; Layout.fillWidth: true }
-                    NavButton { pageIndex: 4; iconKind: "settings"; text: appModel.strings.nav_settings; Layout.fillWidth: true }
+                    NavButton { pageIndex: 0; iconKind: "home"; text: appModel.strings.nav_home; description: appModel.strings.home_description; Layout.fillWidth: true }
+                    NavButton { pageIndex: 1; iconKind: "collection"; text: appModel.strings.nav_collection; description: appModel.strings.collection_description; Layout.fillWidth: true }
+                    NavButton { pageIndex: 2; iconKind: "bag"; text: appModel.strings.nav_bag; description: appModel.strings.bag_description; Layout.fillWidth: true }
+                    NavButton { pageIndex: 3; iconKind: "shop"; text: appModel.strings.nav_shop; description: appModel.strings.shop_description; Layout.fillWidth: true }
+                    NavButton { pageIndex: 4; iconKind: "settings"; text: appModel.strings.nav_settings; description: appModel.strings.settings_description; Layout.fillWidth: true }
                 }
             }
+        }
+
+        WalletBar {
+            objectName: "sharedWalletBar"
+            Layout.fillWidth: true
+            visible: root.currentPage === 2 || root.currentPage === 3
         }
 
         StackLayout {
@@ -737,33 +858,19 @@ Rectangle {
                     anchors.margins: 10
                     spacing: 7
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 36
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 0
-                            Text { text: appModel.strings.home_description; color: root.mutedColor; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
-                        }
-                        AppButton {
-                            text: appModel.strings.refresh
-                            accessibleName: appModel.strings.refresh
-                            highlighted: true
-                            enabled: appModel.refreshEnabled
-                            onClicked: appModel.requestRefresh()
-                        }
-                    }
-
                     Panel {
+                        id: companionPanel
+                        objectName: "companionPanel"
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 132
+                        Layout.preferredHeight: 142
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 11
                             spacing: 12
                             Rectangle {
-                                Layout.preferredWidth: 104
-                                Layout.fillHeight: true
+                                objectName: "companionFrame"
+                                Layout.preferredWidth: 120
+                                Layout.preferredHeight: 120
                                 radius: 12
                                 color: root.accentSurface
                                 AnimatedImage {
@@ -793,7 +900,19 @@ Rectangle {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 3
-                                Text { text: appModel.strings.current_companion; color: root.mutedColor; font.pixelSize: 10; font.letterSpacing: 1 }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text { text: appModel.strings.current_companion; color: root.mutedColor; font.pixelSize: 10; font.letterSpacing: 1; Layout.fillWidth: true }
+                                    AppButton {
+                                        objectName: "homeRefreshButton"
+                                        Layout.preferredHeight: 30
+                                        text: appModel.strings.refresh
+                                        accessibleName: appModel.strings.refresh
+                                        highlighted: true
+                                        enabled: appModel.refreshEnabled
+                                        onClicked: appModel.requestRefresh()
+                                    }
+                                }
                                 Text { text: appModel.companionName; color: root.textColor; font.pixelSize: 20; font.weight: Font.Medium; elide: Text.ElideRight; Layout.fillWidth: true }
                                 Text { text: appModel.companionSubtitle; color: root.mutedColor; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
                                 Text { text: appModel.companionEvolutionText; color: root.mutedColor; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
@@ -901,7 +1020,7 @@ Rectangle {
                                             Layout.fillWidth: true
                                             WarningIcon {
                                                 objectName: "resetCreditWarningIcon"
-                                                visible: modelData.kind === "credit"
+                                                visible: modelData.kind === "credit" && modelData.urgency !== "neutral"
                                                 markColor: modelData.urgency === "critical" ? root.dangerColor : root.warningColor
                                                 Layout.preferredWidth: 16
                                                 Layout.preferredHeight: 16
@@ -948,45 +1067,49 @@ Rectangle {
                     width: collectionPage.availableWidth
                     spacing: 10
                     Item { Layout.preferredHeight: 4 }
-                    PageHeading {
-                        Layout.leftMargin: 14
-                        Layout.rightMargin: 14
-                        title: appModel.strings.nav_collection
-                        subtitle: appModel.strings.collection_description
-                    }
-                    RowLayout {
+                    Panel {
+                        id: collectionToolbar
+                        objectName: "collectionToolbar"
                         Layout.fillWidth: true
                         Layout.leftMargin: 14
                         Layout.rightMargin: 14
-                        SegmentedControl {
-                            objectName: "collectionModeControl"
-                            options: [{label: appModel.strings.pokedex, value: "dex"}, {label: appModel.strings.catch_log, value: "catches"}]
-                            currentValue: root.collectionMode
-                            accessibleName: appModel.strings.collection_view
-                            onSelected: value => root.collectionMode = value
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text {
-                            visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
-                            text: root.format(appModel.strings.page, {page: appModel.dexPage, count: appModel.dexPageCount})
-                            color: root.mutedColor
-                            font.pixelSize: 11
-                        }
-                    }
-                    Flow {
-                        visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 14
-                        Layout.rightMargin: 14
-                        spacing: 6
-                        Repeater {
-                            model: appModel.dexFilters
-                            AppButton {
-                                required property var modelData
-                                text: modelData.label + "  " + modelData.count
-                                accessibleName: root.format(appModel.strings.filter_by, {label: modelData.label})
-                                highlighted: appModel.dexFilter === modelData.key
-                                onClicked: appModel.setDexFilter(modelData.key)
+                        Layout.preferredHeight: root.collectionMode === "dex" && root.selectedDexIndex < 0 ? 74 : 42
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 5
+                            spacing: 4
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
+                                SegmentedControl {
+                                    objectName: "collectionModeControl"
+                                    options: [{label: appModel.strings.pokedex, value: "dex"}, {label: appModel.strings.catch_log, value: "catches"}]
+                                    currentValue: root.collectionMode
+                                    accessibleName: appModel.strings.collection_view
+                                    onSelected: value => root.collectionMode = value
+                                }
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
+                                    text: root.format(appModel.strings.page, {page: appModel.dexPage, count: appModel.dexPageCount})
+                                    color: root.mutedColor
+                                    font.pixelSize: 11
+                                }
+                            }
+                            Flow {
+                                visible: root.collectionMode === "dex" && root.selectedDexIndex < 0
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 28
+                                spacing: 5
+                                Repeater {
+                                    model: appModel.dexFilters
+                                    FilterChip {
+                                        required property var modelData
+                                        filterKey: modelData.key
+                                        label: modelData.label
+                                        itemCount: modelData.count
+                                    }
+                                }
                             }
                         }
                     }
@@ -1267,13 +1390,6 @@ Rectangle {
                     width: bagPage.availableWidth
                     spacing: 10
                     Item { Layout.preferredHeight: 4 }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 14
-                        Layout.rightMargin: 14
-                        PageHeading { title: appModel.strings.nav_bag; subtitle: appModel.strings.bag_description; Layout.fillWidth: true }
-                        WalletBadge { }
-                    }
                     GridLayout {
                         id: bagGrid
                         Layout.fillWidth: true
@@ -1348,13 +1464,6 @@ Rectangle {
                     width: shopPage.availableWidth
                     spacing: 10
                     Item { Layout.preferredHeight: 4 }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 14
-                        Layout.rightMargin: 14
-                        PageHeading { title: appModel.strings.nav_shop; subtitle: appModel.strings.shop_description; Layout.fillWidth: true }
-                        WalletBadge { }
-                    }
                     GridLayout {
                         Layout.fillWidth: true
                         Layout.leftMargin: 14
@@ -1437,12 +1546,6 @@ Rectangle {
                     width: settingsPage.availableWidth
                     spacing: 9
                     Item { Layout.preferredHeight: 4 }
-                    PageHeading {
-                        Layout.leftMargin: 14
-                        Layout.rightMargin: 14
-                        title: appModel.strings.nav_settings
-                        subtitle: appModel.strings.settings_description
-                    }
                     GridLayout {
                         Layout.fillWidth: true
                         Layout.leftMargin: 14
@@ -1631,6 +1734,15 @@ Rectangle {
             }
         }
     }
+
+    ResizeHandle { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; resizeEdges: 1; cursorShape: Qt.SizeHorCursor }
+    ResizeHandle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; resizeEdges: 4; cursorShape: Qt.SizeHorCursor }
+    ResizeHandle { anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: 5; resizeEdges: 2; cursorShape: Qt.SizeVerCursor }
+    ResizeHandle { anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; height: 5; resizeEdges: 8; cursorShape: Qt.SizeVerCursor }
+    ResizeHandle { anchors.left: parent.left; anchors.top: parent.top; width: 8; height: 8; resizeEdges: 3; cursorShape: Qt.SizeFDiagCursor }
+    ResizeHandle { anchors.right: parent.right; anchors.top: parent.top; width: 8; height: 8; resizeEdges: 6; cursorShape: Qt.SizeBDiagCursor }
+    ResizeHandle { anchors.left: parent.left; anchors.bottom: parent.bottom; width: 8; height: 8; resizeEdges: 9; cursorShape: Qt.SizeBDiagCursor }
+    ResizeHandle { anchors.right: parent.right; anchors.bottom: parent.bottom; width: 8; height: 8; resizeEdges: 12; cursorShape: Qt.SizeFDiagCursor }
 
     Rectangle {
         visible: appModel.feedbackText.length > 0

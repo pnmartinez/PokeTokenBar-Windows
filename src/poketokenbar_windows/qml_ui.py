@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Property, QObject, QSettings, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QEvent, Property, QObject, QSettings, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QMainWindow
@@ -103,6 +103,11 @@ class QmlViewModel(QObject):
     useItemRequested = Signal(str)
     buyItemRequested = Signal(str)
     buyEggRequested = Signal(object)
+    windowMinimizeRequested = Signal()
+    windowToggleMaximizeRequested = Signal()
+    windowCloseRequested = Signal()
+    windowMoveRequested = Signal()
+    windowResizeRequested = Signal(int)
 
     def __init__(self, state: GameState, settings: QSettings, api: PokeAPIClient):
         super().__init__()
@@ -185,6 +190,7 @@ class QmlViewModel(QObject):
             ),
             "theme": str(settings.value("theme", "system")),
             "darkMode": False,
+            "windowMaximized": False,
             "language": language,
             "strings": ui_strings(language),
             "languageOptions": list(LANGUAGE_OPTIONS),
@@ -331,6 +337,9 @@ class QmlViewModel(QObject):
     )
     theme = Property(str, lambda self: self._values["theme"], notify=dataChanged)
     darkMode = Property(bool, lambda self: self._values["darkMode"], notify=dataChanged)
+    windowMaximized = Property(
+        bool, lambda self: self._values["windowMaximized"], notify=dataChanged
+    )
     language = Property(str, lambda self: self._values["language"], notify=dataChanged)
     strings = Property(
         "QVariantMap", lambda self: self._values["strings"], notify=dataChanged
@@ -885,6 +894,26 @@ class QmlViewModel(QObject):
     def requestRefresh(self) -> None:
         self.refreshRequested.emit()
 
+    @Slot()
+    def minimizeWindow(self) -> None:
+        self.windowMinimizeRequested.emit()
+
+    @Slot()
+    def toggleMaximizeWindow(self) -> None:
+        self.windowToggleMaximizeRequested.emit()
+
+    @Slot()
+    def closeWindow(self) -> None:
+        self.windowCloseRequested.emit()
+
+    @Slot()
+    def startWindowMove(self) -> None:
+        self.windowMoveRequested.emit()
+
+    @Slot(int)
+    def startWindowResize(self, edges: int) -> None:
+        self.windowResizeRequested.emit(int(edges))
+
     @Slot(bool)
     def setPetEnabled(self, enabled: bool) -> None:
         self.settings.setValue(PET_ENABLED_KEY, enabled)
@@ -1050,6 +1079,7 @@ class QmlMainWindow(QMainWindow):
 
     def __init__(self, state: GameState, settings: QSettings, api: PokeAPIClient):
         super().__init__()
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setWindowTitle(APP_NAME)
         self.setMinimumSize(520, 640)
         self.resize(560, 740)
@@ -1066,6 +1096,11 @@ class QmlMainWindow(QMainWindow):
         self.view_model.useItemRequested.connect(self.use_item_requested)
         self.view_model.buyItemRequested.connect(self.buy_item_requested)
         self.view_model.buyEggRequested.connect(self.buy_egg_requested)
+        self.view_model.windowMinimizeRequested.connect(self.showMinimized)
+        self.view_model.windowToggleMaximizeRequested.connect(self._toggle_maximized)
+        self.view_model.windowCloseRequested.connect(self.close)
+        self.view_model.windowMoveRequested.connect(self._start_system_move)
+        self.view_model.windowResizeRequested.connect(self._start_system_resize)
 
         self.quick = QQuickWidget(self)
         self.quick.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
@@ -1089,6 +1124,31 @@ class QmlMainWindow(QMainWindow):
         self.buy_egg_btn = _ButtonProxy(parent=self)
         self.buy_uncommon_egg_btn = _ButtonProxy(parent=self)
         self.buy_rare_egg_btn = _ButtonProxy(parent=self)
+
+    def _sync_window_state(self) -> None:
+        self.view_model._set("windowMaximized", self.isMaximized())
+
+    def _toggle_maximized(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+        QTimer.singleShot(0, self._sync_window_state)
+
+    def _start_system_move(self) -> None:
+        handle = self.windowHandle()
+        if handle is not None and not self.isMaximized():
+            handle.startSystemMove()
+
+    def _start_system_resize(self, edges: int) -> None:
+        handle = self.windowHandle()
+        if handle is not None and not self.isMaximized():
+            handle.startSystemResize(Qt.Edge(edges))
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            QTimer.singleShot(0, self._sync_window_state)
 
     def set_state(self, state: GameState) -> None:
         self.view_model.set_state(state)

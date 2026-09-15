@@ -29,10 +29,15 @@ This document records user-visible behavior that must survive visual redesigns a
 - Capture summaries describe completion or stage without repeating the Pokémon name already shown in the card.
 - Bag icons and text share the same left edge at narrow widths. All egg tiers use one egg silhouette with escalating colors and rarity cues rather than unrelated circle symbols.
 - A Windows login launch stays in the tray; the floating pet follows its saved preference and the main window opens only on a manual action. An existing login command is upgraded only when it points to the same executable.
-- Available reset credits always show a vector warning triangle beside their count and earliest expiry. The triangle turns red at critical urgency; color remains an additional cue in both themes.
+- Available reset credits show no warning icon while neutral. A vector warning triangle appears only when expiry is warning (amber) or critical (red), using the same urgency rules as the row color in both themes.
 - The single language setting controls the interface, Pokémon names, tray tooltip and context menu, desktop pet tooltip and context menu, and limit notifications.
 - Settings provide a short tooltip and accessible description for every non-obvious control. Reset format calls the countdown option Time remaining rather than Time.
 - Dark mode controls and secondary text retain readable contrast; combo boxes and numeric selectors use the same panel palette as the rest of the interface.
+- The main window uses one integrated, theme-aware header with the app identity, status, native-equivalent minimize/maximize/close actions, drag, double-click maximize and edge resizing. It must not expose a separate light system title bar in dark mode.
+- Page descriptions live in the navigation tooltips and accessible descriptions instead of consuming a row inside every page.
+- Home keeps Refresh inside the companion card. The animated companion sits in a square frame with equal inner margins.
+- Collection presents its view switch and Pokédex filters as two levels inside one compact toolbar, so they read as related controls rather than unrelated selectors.
+- Bag and Shop share the same slim wallet strip in the same position so the balance feels persistent while switching between them.
 - Body copy must remain readable at the minimum window size. Ordinary labels are at least 12 px where the layout permits it; captions and metadata are at least 10 px.
 
 ## Regression coverage

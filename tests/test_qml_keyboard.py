@@ -91,6 +91,10 @@ class QmlKeyboardTests(unittest.TestCase):
         accessible = QAccessible.queryAccessibleInterface(item)
         return accessible.text(QAccessible.Text.Name) if accessible else ""
 
+    def description(self, item):
+        accessible = QAccessible.queryAccessibleInterface(item)
+        return accessible.text(QAccessible.Text.Description) if accessible else ""
+
     def controls_tree(self, item):
         for child in item.childItems():
             yield child
@@ -207,6 +211,53 @@ class QmlKeyboardTests(unittest.TestCase):
             icon.property("markColor").name(),
             self.root.property("dangerColor").name(),
         )
+        self.window.render(RefreshResult(
+            UsageSnapshot(scanned_at=now),
+            {
+                "codex": ProviderLimits(
+                    "codex",
+                    windows=[LimitWindow("Weekly", 10, now + timedelta(days=6))],
+                    reset_credits_available=3,
+                    reset_credits=[
+                        RateLimitResetCredit(expires_at=now + timedelta(days=5))
+                    ],
+                )
+            },
+            {}, self.state, [], None, "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        warning_icons = [
+            item
+            for item in self.controls_tree(self.root)
+            if item.objectName() == "resetCreditWarningIcon" and item.property("visible")
+        ]
+        self.assertTrue(warning_icons)
+        self.assertEqual(
+            warning_icons[0].property("markColor").name(),
+            self.root.property("warningColor").name(),
+        )
+        self.window.render(RefreshResult(
+            UsageSnapshot(scanned_at=now),
+            {
+                "codex": ProviderLimits(
+                    "codex",
+                    windows=[LimitWindow("Weekly", 10, now + timedelta(days=6))],
+                    reset_credits_available=3,
+                    reset_credits=[
+                        RateLimitResetCredit(expires_at=now + timedelta(days=20))
+                    ],
+                )
+            },
+            {}, self.state, [], None, "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        neutral_icons = [
+            item
+            for item in self.controls_tree(self.root)
+            if item.objectName() == "resetCreditWarningIcon"
+        ]
+        self.assertTrue(neutral_icons)
+        self.assertFalse(any(item.property("visible") for item in neutral_icons))
 
     def test_provider_list_scrolls_only_when_rows_really_overflow(self):
         now = datetime.now(timezone.utc)
@@ -246,6 +297,61 @@ class QmlKeyboardTests(unittest.TestCase):
         QTest.qWait(20)
         self.assertGreater(providers.property("contentHeight"), providers.height())
         self.assertTrue(providers.property("interactive"))
+
+    def test_integrated_window_chrome_and_compact_page_layout(self):
+        self.assertTrue(self.window.windowFlags() & Qt.WindowType.FramelessWindowHint)
+        self.assertIsNotNone(self.root.findChild(QObject, "customTitleBar"))
+        for object_name in (
+            "minimizeWindowButton",
+            "maximizeWindowButton",
+            "closeWindowButton",
+        ):
+            control = self.root.findChild(QObject, object_name)
+            self.assertIsNotNone(control)
+            self.assertTrue(self.name(control))
+
+        frame = self.root.findChild(QObject, "companionFrame")
+        animation = self.root.findChild(QObject, "companionAnimation")
+        self.assertAlmostEqual(frame.width(), frame.height(), delta=0.5)
+        self.assertAlmostEqual(frame.width() - animation.width(), 10, delta=0.5)
+        self.assertAlmostEqual(frame.height() - animation.height(), 10, delta=0.5)
+
+        companion_panel = self.root.findChild(QObject, "companionPanel")
+        refresh = self.root.findChild(QObject, "homeRefreshButton")
+        ancestor = refresh.parentItem()
+        while ancestor is not None and ancestor is not companion_panel:
+            ancestor = ancestor.parentItem()
+        self.assertIs(ancestor, companion_panel)
+
+        wallet = self.root.findChild(QObject, "sharedWalletBar")
+        self.root.setProperty("currentPage", 2)
+        QTest.qWait(20)
+        self.window.grab()
+        self.app.processEvents()
+        bag_y = wallet.mapToItem(self.root, 0, 0).y()
+        self.assertTrue(wallet.isVisible())
+        self.root.setProperty("currentPage", 3)
+        QTest.qWait(20)
+        self.window.grab()
+        self.app.processEvents()
+        self.assertTrue(wallet.isVisible())
+        self.assertAlmostEqual(wallet.mapToItem(self.root, 0, 0).y(), bag_y, delta=0.5)
+        self.root.setProperty("currentPage", 0)
+        QTest.qWait(10)
+        self.assertFalse(wallet.isVisible())
+
+    def test_navigation_exposes_page_descriptions_without_page_heading_rows(self):
+        labels = [
+            "Home",
+            "Collection",
+            "Bag",
+            "Shop",
+            "Settings",
+        ]
+        for label in labels:
+            control = self.control(label)
+            self.assertTrue(self.description(control), label)
+        self.assertIsNotNone(self.root.findChild(QObject, "collectionToolbar"))
 
     def test_companion_uses_animation_and_reveal_pokeball(self):
         animation = self.root.findChild(QObject, "companionAnimation")
