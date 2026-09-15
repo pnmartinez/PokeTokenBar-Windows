@@ -29,6 +29,7 @@ This document records user-visible behavior that must survive visual redesigns a
 - Capture summaries describe completion or stage without repeating the Pokémon name already shown in the card.
 - Bag icons and text share the same left edge at narrow widths. All egg tiers use one egg silhouette with escalating colors and rarity cues rather than unrelated circle symbols.
 - A Windows login launch stays in the tray; the floating pet follows its saved preference and the main window opens only on a manual action. An existing login command is upgraded only when it points to the same executable.
+- Available reset credits always show a vector warning triangle beside their count and earliest expiry. The triangle turns red at critical urgency; color remains an additional cue in both themes.
 - The single language setting controls the interface, Pokémon names, tray tooltip and context menu, desktop pet tooltip and context menu, and limit notifications.
 - Settings provide a short tooltip and accessible description for every non-obvious control. Reset format calls the countdown option Time remaining rather than Time.
 - Dark mode controls and secondary text retain readable contrast; combo boxes and numeric selectors use the same panel palette as the rest of the interface.

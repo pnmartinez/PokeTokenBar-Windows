@@ -13,7 +13,13 @@ from PySide6.QtGui import QAccessible, QFont, QFontDatabase
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from poketokenbar_windows.models import LimitWindow, ProviderLimits, ProviderUsage, UsageSnapshot
+from poketokenbar_windows.models import (
+    LimitWindow,
+    ProviderLimits,
+    ProviderUsage,
+    RateLimitResetCredit,
+    UsageSnapshot,
+)
 from poketokenbar_windows.qml_ui import QmlMainWindow
 from poketokenbar_windows.state import CatchRecord, GameState, MonState
 from poketokenbar_windows.ui import RefreshResult
@@ -170,6 +176,37 @@ class QmlKeyboardTests(unittest.TestCase):
         self.assertGreaterEqual(panel.height(), 90)
         self.assertEqual(content.property("count"), 5)
         self.assertGreater(content.property("contentHeight"), content.height())
+
+    def test_reset_credit_row_shows_warning_icon(self):
+        now = datetime.now(timezone.utc)
+        self.window.render(RefreshResult(
+            UsageSnapshot(scanned_at=now),
+            {
+                "codex": ProviderLimits(
+                    "codex",
+                    reset_credits_available=3,
+                    reset_credits=[
+                        RateLimitResetCredit(expires_at=now + timedelta(days=2))
+                    ],
+                )
+            },
+            {}, self.state, [], None, "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        icon = next(
+            (
+                item
+                for item in self.controls_tree(self.root)
+                if item.objectName() == "resetCreditWarningIcon"
+            ),
+            None,
+        )
+        self.assertIsNotNone(icon)
+        self.assertTrue(icon.property("visible"))
+        self.assertEqual(
+            icon.property("markColor").name(),
+            self.root.property("dangerColor").name(),
+        )
 
     def test_provider_list_scrolls_only_when_rows_really_overflow(self):
         now = datetime.now(timezone.utc)

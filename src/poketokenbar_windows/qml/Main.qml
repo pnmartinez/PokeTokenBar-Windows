@@ -136,6 +136,42 @@ Rectangle {
         }
     }
 
+    component WarningIcon: Item {
+        property color markColor: root.warningColor
+        implicitWidth: 16
+        implicitHeight: 16
+        Accessible.ignored: true
+        Canvas {
+            anchors.fill: parent
+            property color iconColor: parent.markColor
+            onIconColorChanged: requestPaint()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                const scale = Math.min(width, height) / 16
+                ctx.save()
+                ctx.scale(scale, scale)
+                ctx.fillStyle = iconColor
+                ctx.beginPath()
+                ctx.moveTo(8, 1)
+                ctx.lineTo(15, 14)
+                ctx.quadraticCurveTo(15.4, 15, 14.1, 15)
+                ctx.lineTo(1.9, 15)
+                ctx.quadraticCurveTo(0.6, 15, 1, 14)
+                ctx.closePath()
+                ctx.fill()
+                ctx.fillStyle = root.darkMode ? "#172033" : "#ffffff"
+                ctx.fillRect(7.25, 5, 1.5, 5.5)
+                ctx.beginPath()
+                ctx.arc(8, 12.5, 1, 0, 2 * Math.PI)
+                ctx.fill()
+                ctx.restore()
+            }
+        }
+    }
+
     component EggIcon: Item {
         required property string tier
         implicitWidth: 42
@@ -863,6 +899,13 @@ Rectangle {
                                         spacing: 2
                                         RowLayout {
                                             Layout.fillWidth: true
+                                            WarningIcon {
+                                                objectName: "resetCreditWarningIcon"
+                                                visible: modelData.kind === "credit"
+                                                markColor: modelData.urgency === "critical" ? root.dangerColor : root.warningColor
+                                                Layout.preferredWidth: 16
+                                                Layout.preferredHeight: 16
+                                            }
                                             Text {
                                                 text: modelData.kind === "credit"
                                                     ? modelData.provider + " · " + modelData.label
