@@ -197,7 +197,7 @@ def companion_progress_percent(state: GameState) -> int:
         mon = state.mon
         value = mon.used_at_stage
         target = phase_threshold(mon.rarity, len(mon.path_ids), mon.stage_index)
-    return min(100, max(0, value * 100 // max(1, target)))
+    return min(100, max(0, round(value * 100 / max(1, target))))
 
 
 class StateStore:

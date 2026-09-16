@@ -90,9 +90,8 @@ def limit_alert_body(
     used_percent: float,
     mode: LimitDisplayMode = DEFAULT_LIMIT_DISPLAY_MODE,
 ) -> str:
-    # Alert semantics stay anchored to utilization regardless of the display
-    # preference. This matches upstream and keeps warning thresholds unambiguous.
-    return f"{provider_label} {window_label}: {limit_percent_text(used_percent, 'used')}."
+    # Thresholds use utilization; presentation follows the user's preference.
+    return f"{provider_label} {window_label}: {limit_percent_text(used_percent, mode)}."
 
 
 def is_reserve_window(window: LimitWindow) -> bool:
@@ -125,16 +124,9 @@ def highest_relevant_limit(
     snapshot: UsageSnapshot,
     limits_by_provider: Mapping[str, ProviderLimits],
 ) -> tuple[str, LimitWindow] | None:
-    """Pick the active, most-used non-spend limit from providers used today."""
-    active = {
-        provider
-        for provider, usage in snapshot.providers.items()
-        if usage.today_tokens > 0
-    }
+    """Pick the most-used official limit, independently of local token scans."""
     candidates: list[tuple[float, float, str, LimitWindow]] = []
     for provider, status in limits_by_provider.items():
-        if provider not in active:
-            continue
         for window in _compact_candidate_windows(status):
             reset = window.resets_at.timestamp() if window.resets_at is not None else float("inf")
             candidates.append((float(window.used_percent), -reset, provider, window))

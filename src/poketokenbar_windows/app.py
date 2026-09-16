@@ -4,7 +4,7 @@ import ctypes
 import os
 import sys
 
-from .windows import APP_NAME
+from .windows import APP_NAME, refresh_autostart_registration
 
 
 def _configure_windows_identity() -> None:
@@ -28,7 +28,14 @@ def _hide_console_window() -> None:
         pass
 
 
+def _background_launch_requested(argv: list[str] | None = None) -> bool:
+    arguments = sys.argv if argv is None else argv
+    return "--background" in arguments[1:]
+
+
 def main() -> int:
+    background_launch = _background_launch_requested()
+    refresh_autostart_registration()
     _configure_windows_identity()
     _hide_console_window()
     from PySide6.QtCore import Qt
@@ -40,7 +47,8 @@ def main() -> int:
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
-    app = QApplication(sys.argv)
+    qt_argv = [argument for argument in sys.argv if argument != "--background"]
+    app = QApplication(qt_argv)
     icon = application_icon()
     app.setWindowIcon(icon)
     app.setApplicationName(APP_NAME)
@@ -49,9 +57,10 @@ def main() -> int:
     app.setQuitOnLastWindowClosed(False)
 
     controller = TrayController(app)
-    # Request the main window on an interactive launch. TrayController defers
-    # the actual show until the first real usage/limit snapshot is rendered.
-    controller.show_window()
+    # Interactive launches request the window after the first real snapshot.
+    # The Windows login entry keeps the application in the tray.
+    if not background_launch:
+        controller.show_window()
 
     app._poketokenbar_controller = controller  # keep QObject graph alive
     return app.exec()

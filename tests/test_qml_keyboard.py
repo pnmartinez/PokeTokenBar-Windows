@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -13,7 +14,13 @@ from PySide6.QtGui import QAccessible, QFont, QFontDatabase
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from poketokenbar_windows.models import LimitWindow, ProviderLimits, UsageSnapshot
+from poketokenbar_windows.models import (
+    LimitWindow,
+    ProviderLimits,
+    ProviderUsage,
+    RateLimitResetCredit,
+    UsageSnapshot,
+)
 from poketokenbar_windows.qml_ui import QmlMainWindow
 from poketokenbar_windows.state import CatchRecord, GameState, MonState
 from poketokenbar_windows.ui import RefreshResult
@@ -50,7 +57,18 @@ class QmlKeyboardTests(unittest.TestCase):
             mon=MonState(1, [1, 2, 3], 1, 10, "common", False, "Hardy"),
             used_since_install=10_000_000_000,
             inventory={"rare_candy": 1, "mint": 1, "shiny_charm": 0},
-            catches=[CatchRecord(i, i, [i], "common", i == 1, "Hardy", "2026-09-01") for i in range(1, 27)],
+            catches=[
+                CatchRecord(
+                    i,
+                    i,
+                    [1, 2, 3] if i == 1 else ([26, 27, 28] if i == 26 else [i]),
+                    "common",
+                    i == 1,
+                    "Hardy",
+                    "2026-09-01",
+                )
+                for i in range(1, 27)
+            ],
         )
         self.window = QmlMainWindow(self.state, self.settings, LocalSprites())
         self.addCleanup(self.window.deleteLater)
@@ -74,6 +92,15 @@ class QmlKeyboardTests(unittest.TestCase):
         accessible = QAccessible.queryAccessibleInterface(item)
         return accessible.text(QAccessible.Text.Name) if accessible else ""
 
+    def description(self, item):
+        accessible = QAccessible.queryAccessibleInterface(item)
+        return accessible.text(QAccessible.Text.Description) if accessible else ""
+
+    def controls_tree(self, item):
+        for child in item.childItems():
+            yield child
+            yield from self.controls_tree(child)
+
     def controls(self, item=None):
         for child in (item or self.root).childItems():
             if child.isVisible() and child.isEnabled() and child.activeFocusOnTab():
@@ -88,7 +115,7 @@ class QmlKeyboardTests(unittest.TestCase):
         self.key(Qt.Key_Space)
 
     def test_tab_and_backtab_keep_every_page_control_named_and_on_screen(self):
-        for width in (820, 1080):
+        for width in (520, 820):
             for theme in ("light", "dark"):
                 self.window.resize(width, 580)
                 self.window.view_model.setPreference("theme", theme)
@@ -122,9 +149,9 @@ class QmlKeyboardTests(unittest.TestCase):
     def test_restored_settings_respond_to_keyboard_and_persist(self):
         self.root.setProperty("currentPage", 4)
         self.app.processEvents()
-        self.activate("Porcentaje de cuota: Restante")
+        self.activate("Quota percentage: Remaining")
         self.assertEqual(self.settings.value("limit_display_mode"), "remaining")
-        self.activate("Formato de reinicios: Fecha")
+        self.activate("Reset format: Date")
         self.assertEqual(self.settings.value("limit_time_display_mode"), "datetime")
         warning = self.root.findChild(QObject, "warningThresholdSpin")
         warning.forceActiveFocus(Qt.TabFocusReason)
@@ -134,7 +161,7 @@ class QmlKeyboardTests(unittest.TestCase):
         critical.forceActiveFocus(Qt.TabFocusReason)
         self.key(Qt.Key_Down)
         self.assertEqual(self.settings.value("critThreshold", type=int), 90)
-        self.activate("Límite principal en la bandeja")
+        self.activate("Primary limit in tray")
         self.assertFalse(self.settings.value("tray_show_limit", type=bool))
         slider = self.root.findChild(QObject, "petSizeSlider")
         slider.forceActiveFocus(Qt.TabFocusReason)
@@ -151,24 +178,332 @@ class QmlKeyboardTests(unittest.TestCase):
         panel = self.root.findChild(QObject, "limitsPanel")
         content = self.root.findChild(QObject, "limitsContent")
         self.assertEqual(len(self.window.view_model.limits), 5)
-        self.assertGreater(panel.height(), 250)
-        self.assertLessEqual(content.implicitHeight(), content.height() + 1)
-        for item in content.childItems():
-            if item.isVisible():
-                self.assertLessEqual(item.y() + item.height(), content.height() + 1)
+        self.assertGreaterEqual(panel.height(), 90)
+        self.assertEqual(content.property("count"), 5)
+        self.assertGreater(content.property("contentHeight"), content.height())
+
+    def test_reset_credit_row_shows_warning_icon(self):
+        now = datetime.now(timezone.utc)
+        self.window.render(RefreshResult(
+            UsageSnapshot(scanned_at=now),
+            {
+                "codex": ProviderLimits(
+                    "codex",
+                    reset_credits_available=3,
+                    reset_credits=[
+                        RateLimitResetCredit(expires_at=now + timedelta(days=2))
+                    ],
+                )
+            },
+            {}, self.state, [], None, "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        icon = next(
+            (
+                item
+                for item in self.controls_tree(self.root)
+                if item.objectName() == "resetCreditWarningIcon"
+            ),
+            None,
+        )
+        self.assertIsNotNone(icon)
+        self.assertTrue(icon.property("visible"))
+        self.assertEqual(
+            icon.property("markColor").name(),
+            self.root.property("dangerColor").name(),
+        )
+        self.window.render(RefreshResult(
+            UsageSnapshot(scanned_at=now),
+            {
+                "codex": ProviderLimits(
+                    "codex",
+                    windows=[LimitWindow("Weekly", 10, now + timedelta(days=6))],
+                    reset_credits_available=3,
+                    reset_credits=[
+                        RateLimitResetCredit(expires_at=now + timedelta(days=5))
+                    ],
+                )
+            },
+            {}, self.state, [], None, "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        warning_icons = [
+            item
+            for item in self.controls_tree(self.root)
+            if item.objectName() == "resetCreditWarningIcon" and item.property("visible")
+        ]
+        self.assertTrue(warning_icons)
+        self.assertEqual(
+            warning_icons[0].property("markColor").name(),
+            self.root.property("warningColor").name(),
+        )
+        self.window.render(RefreshResult(
+            UsageSnapshot(scanned_at=now),
+            {
+                "codex": ProviderLimits(
+                    "codex",
+                    windows=[LimitWindow("Weekly", 10, now + timedelta(days=6))],
+                    reset_credits_available=3,
+                    reset_credits=[
+                        RateLimitResetCredit(expires_at=now + timedelta(days=20))
+                    ],
+                )
+            },
+            {}, self.state, [], None, "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        neutral_icons = [
+            item
+            for item in self.controls_tree(self.root)
+            if item.objectName() == "resetCreditWarningIcon"
+        ]
+        self.assertTrue(neutral_icons)
+        self.assertFalse(any(item.property("visible") for item in neutral_icons))
+
+    def test_provider_list_scrolls_only_when_rows_really_overflow(self):
+        now = datetime.now(timezone.utc)
+        self.window.render(RefreshResult(
+            UsageSnapshot(
+                providers={
+                    "codex": ProviderUsage("codex", today_tokens=10),
+                    "cursor": ProviderUsage("cursor", today_tokens=20),
+                },
+                scanned_at=now,
+            ),
+            {},
+            {},
+            self.state,
+            [],
+            None,
+            "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        providers = self.root.findChild(QObject, "providersList")
+        self.assertLessEqual(providers.property("contentHeight"), providers.height() + 0.5)
+        self.assertFalse(providers.property("interactive"))
+
+        many = {
+            f"provider{i}": ProviderUsage(f"provider{i}", today_tokens=i)
+            for i in range(1, 6)
+        }
+        self.window.render(RefreshResult(
+            UsageSnapshot(providers=many, scanned_at=now),
+            {},
+            {},
+            self.state,
+            [],
+            None,
+            "Pokemon 2",
+        ))
+        QTest.qWait(20)
+        self.assertGreater(providers.property("contentHeight"), providers.height())
+        self.assertTrue(providers.property("interactive"))
+
+    def test_integrated_window_chrome_and_compact_page_layout(self):
+        self.assertTrue(self.window.windowFlags() & Qt.WindowType.FramelessWindowHint)
+        self.assertIsNotNone(self.root.findChild(QObject, "customTitleBar"))
+        for object_name in (
+            "minimizeWindowButton",
+            "maximizeWindowButton",
+            "closeWindowButton",
+        ):
+            control = self.root.findChild(QObject, object_name)
+            self.assertIsNotNone(control)
+            self.assertTrue(self.name(control))
+
+        frame = self.root.findChild(QObject, "companionFrame")
+        animation = self.root.findChild(QObject, "companionAnimation")
+        self.assertAlmostEqual(frame.width(), frame.height(), delta=0.5)
+        self.assertGreaterEqual(frame.width(), 136)
+        self.assertAlmostEqual(frame.width() - animation.width(), 10, delta=0.5)
+        self.assertAlmostEqual(frame.height() - animation.height(), 10, delta=0.5)
+
+        companion_panel = self.root.findChild(QObject, "companionPanel")
+        progress = self.root.findChild(QObject, "companionProgressBar")
+        progress_position = progress.mapToItem(companion_panel, 0, 0)
+        self.assertGreaterEqual(progress_position.y(), 0)
+        self.assertLessEqual(progress_position.y() + progress.height(), companion_panel.height())
+        refresh = self.root.findChild(QObject, "homeRefreshButton")
+        ancestor = refresh.parentItem()
+        while ancestor is not None and ancestor is not companion_panel:
+            ancestor = ancestor.parentItem()
+        self.assertIs(ancestor, companion_panel)
+
+        wallet = self.root.findChild(QObject, "sharedWalletBar")
+        self.root.setProperty("currentPage", 2)
+        QTest.qWait(20)
+        self.window.grab()
+        self.app.processEvents()
+        bag_y = wallet.mapToItem(self.root, 0, 0).y()
+        self.assertTrue(wallet.isVisible())
+        self.root.setProperty("currentPage", 3)
+        QTest.qWait(20)
+        self.window.grab()
+        self.app.processEvents()
+        self.assertTrue(wallet.isVisible())
+        self.assertAlmostEqual(wallet.mapToItem(self.root, 0, 0).y(), bag_y, delta=0.5)
+        self.root.setProperty("currentPage", 0)
+        QTest.qWait(10)
+        self.assertFalse(wallet.isVisible())
+
+    def test_resize_handles_use_qt_edges_and_generous_hit_areas(self):
+        expected_edges = {
+            "leftResizeHandle": int(Qt.Edge.LeftEdge.value),
+            "rightResizeHandle": int(Qt.Edge.RightEdge.value),
+            "topResizeHandle": int(Qt.Edge.TopEdge.value),
+            "bottomResizeHandle": int(Qt.Edge.BottomEdge.value),
+            "topLeftResizeHandle": int((Qt.Edge.TopEdge | Qt.Edge.LeftEdge).value),
+            "topRightResizeHandle": int((Qt.Edge.TopEdge | Qt.Edge.RightEdge).value),
+            "bottomLeftResizeHandle": int((Qt.Edge.BottomEdge | Qt.Edge.LeftEdge).value),
+            "bottomRightResizeHandle": int((Qt.Edge.BottomEdge | Qt.Edge.RightEdge).value),
+        }
+        for object_name, edges in expected_edges.items():
+            with self.subTest(handle=object_name):
+                handle = self.root.findChild(QObject, object_name)
+                self.assertIsNotNone(handle)
+                self.assertEqual(handle.property("resizeEdges"), edges)
+                if "Left" in object_name or "Right" in object_name:
+                    self.assertGreaterEqual(handle.width(), 12)
+                    self.assertGreaterEqual(handle.height(), 12)
+                elif object_name in ("leftResizeHandle", "rightResizeHandle"):
+                    self.assertGreaterEqual(handle.width(), 8)
+                else:
+                    self.assertGreaterEqual(handle.height(), 8)
+
+    def test_maximize_glyph_tracks_window_state_in_both_directions(self):
+        glyph = self.root.findChild(QObject, "maximizeWindowButtonGlyph")
+        self.assertIsNotNone(glyph)
+        self.assertEqual(glyph.property("renderedKind"), "maximize")
+
+        def rendered_glyph():
+            image = self.window.quick.grabFramebuffer()
+            point = glyph.mapToItem(self.root, 0, 0)
+            ratio = image.devicePixelRatio()
+            return image.copy(
+                round(point.x() * ratio), round(point.y() * ratio),
+                round(glyph.width() * ratio), round(glyph.height() * ratio),
+            )
+
+        maximize_image = rendered_glyph()
+        self.window.view_model.toggleMaximizeWindow()
+        QTest.qWait(30)
+        self.assertTrue(self.window.isMaximized())
+        self.assertEqual(glyph.property("renderedKind"), "restore")
+        self.assertNotEqual(rendered_glyph(), maximize_image)
+        self.window.view_model.toggleMaximizeWindow()
+        QTest.qWait(30)
+        self.assertFalse(self.window.isMaximized())
+        self.assertEqual(glyph.property("renderedKind"), "maximize")
+
+    def test_title_drag_delegates_to_system_even_when_maximized(self):
+        handle = Mock()
+        handle.startSystemMove.return_value = True
+        self.window.showMaximized()
+        QTest.qWait(30)
+        self.assertTrue(self.window.isMaximized())
+        with patch.object(QmlMainWindow, "windowHandle", return_value=handle):
+            self.window.view_model.startWindowMove()
+        handle.startSystemMove.assert_called_once_with()
+
+    def test_navigation_exposes_page_descriptions_without_page_heading_rows(self):
+        labels = [
+            "Home",
+            "Collection",
+            "Bag",
+            "Shop",
+            "Settings",
+        ]
+        for label in labels:
+            control = self.control(label)
+            self.assertTrue(self.description(control), label)
+        self.assertIsNotNone(self.root.findChild(QObject, "collectionToolbar"))
+        self.root.setProperty("currentPage", 1)
+        QTest.qWait(20)
+        filter_row = self.root.findChild(QObject, "dexFilterRow")
+        page_position = self.root.findChild(QObject, "dexPagePosition")
+        page_point = page_position.mapToItem(filter_row, 0, 0)
+        self.assertGreaterEqual(page_point.y(), -1)
+        self.assertLessEqual(page_point.y() + page_position.height(), filter_row.height() + 1)
+
+    def test_companion_uses_animation_and_reveal_pokeball(self):
+        animation = self.root.findChild(QObject, "companionAnimation")
+        reveal = self.root.findChild(QObject, "companionReveal")
+        self.window.view_model.set_reveal(False)
+        QTest.qWait(10)
+        self.assertTrue(animation.property("playing"))
+        self.assertTrue(animation.isVisible())
+        self.window.view_model.set_reveal(True)
+        QTest.qWait(10)
+        self.assertFalse(animation.isVisible())
+        self.assertTrue(reveal.isVisible())
+
+    def test_pokedex_card_opens_animated_detail_and_arrows_cross_pages(self):
+        self.root.setProperty("currentPage", 1)
+        QTest.qWait(20)
+        self.activate("View Pokemon 1")
+        self.assertEqual(self.root.property("selectedDexIndex"), 0)
+        detail = self.root.findChild(QObject, "dexDetailPanel")
+        animation = self.root.findChild(QObject, "dexDetailAnimation")
+        self.assertTrue(detail.isVisible())
+        self.assertTrue(animation.property("playing"))
+        selections = []
+        self.window.view_model.representativeChanged.connect(selections.append)
+        self.activate("Set as desktop companion")
+        self.assertEqual(selections[-1], (1, True))
+        self.activate("Next →")
+        self.assertEqual(self.root.property("selectedDexIndex"), 1)
+
+        self.root.setProperty("selectedDexIndex", 23)
+        self.activate("Next →")
+        self.assertEqual(self.root.property("selectedDexIndex"), 24)
+        self.activate("Back to Pokédex")
+        self.assertEqual(self.root.property("selectedDexIndex"), -1)
+        self.assertEqual(self.window.view_model.dexPage, 2)
+
+    def test_catch_log_renders_evolution_arrows(self):
+        state = GameState(
+            mon=MonState(1, [1, 2, 3], 1, 10, "common", False, "Hardy"),
+            catches=[
+                CatchRecord(
+                    1,
+                    1,
+                    [1, 2, 3],
+                    "common",
+                    False,
+                    "Hardy",
+                    "2026-09-01",
+                )
+            ],
+        )
+        window = QmlMainWindow(state, self.settings, LocalSprites())
+        self.addCleanup(window.deleteLater)
+        self.addCleanup(window.hide)
+        root = window.quick.rootObject()
+        root.setProperty("currentPage", 1)
+        root.setProperty("collectionMode", "catches")
+        window.show()
+        QTest.qWait(50)
+        window.grab()
+        self.app.processEvents()
+        arrows = [
+            item
+            for item in self.controls_tree(root)
+            if item.objectName() == "evolutionArrow"
+        ]
+        self.assertTrue(any(arrow.isVisible() for arrow in arrows))
 
     def test_collection_can_be_paged_and_switched_using_keyboard(self):
         self.root.setProperty("currentPage", 1)
         self.app.processEvents()
-        self.activate("Ver normal de Pokemon 1")
+        self.activate("Show normal Pokemon 1")
         self.assertFalse(self.window.view_model.dexEntries[0]["showShiny"])
-        self.activate("Siguiente →")
+        self.activate("Next →")
         self.assertEqual(self.window.view_model.dexPage, 2)
-        self.activate("← Anterior")
+        self.activate("← Previous")
         self.assertEqual(self.window.view_model.dexPage, 1)
-        self.activate("Vista de colección: Capturas")
+        self.activate("Collection view: Catch log")
         self.assertEqual(self.root.property("collectionMode"), "catches")
-        self.activate("Vista de colección: Pokédex")
+        self.activate("Collection view: Pokédex")
         self.assertEqual(self.root.property("collectionMode"), "dex")
 
 

@@ -127,7 +127,7 @@ class PetAlertTests(unittest.TestCase):
         )
         self.assertEqual(
             remaining_alerts[0].body,
-            "Codex 5-hour: 90% used.",
+            "Codex 5-hour: 10% remaining.",
         )
 
     def test_new_time_window_rearms_but_small_reset_drift_does_not(self):
@@ -244,13 +244,16 @@ class PetAlertTests(unittest.TestCase):
         status.reserve_active = True
         self.assertIn("Luna Reserve: 95% used", pet_hover_text(snapshot, {"codex": status}))
 
-    def test_hover_does_not_surface_limits_for_unused_provider(self):
+    def test_hover_surfaces_official_limits_without_local_tokens_today(self):
         snapshot = UsageSnapshot(providers={"claude": ProviderUsage("claude", today_tokens=500)})
         codex = ProviderLimits(
             provider="codex",
             windows=[LimitWindow("Weekly", 90, self.now + timedelta(days=2))],
         )
-        self.assertEqual(pet_hover_text(snapshot, {"codex": codex}), "500 tokens today")
+        self.assertEqual(
+            pet_hover_text(snapshot, {"codex": codex}),
+            "500 tokens today\nCodex Weekly: 90% used",
+        )
 
     def test_duplicate_display_labels_keep_independent_alert_state(self):
         status = ProviderLimits(
