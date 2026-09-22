@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
@@ -349,6 +350,22 @@ class StateTests(unittest.TestCase):
             loaded = store.load()
             self.assertEqual(loaded.egg_usage, 123)
             self.assertEqual(loaded.used_since_install, 456)
+
+    def test_parallel_saves_keep_valid_state_and_highest_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+
+            def save(value: int) -> None:
+                StateStore(path).save(GameState(used_since_install=value))
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                list(executor.map(save, range(16)))
+
+            self.assertEqual(json.loads(
+                (Path(tmp) / "state-recovery.json").read_text(encoding="utf-8")
+            )["used_since_install"], 15)
+            self.assertIn(json.loads(path.read_text(encoding="utf-8"))["used_since_install"], range(16))
+            self.assertFalse(list(Path(tmp).glob("*.tmp")))
 
     def test_recovery_copy_survives_a_stale_empty_save(self):
         with tempfile.TemporaryDirectory() as tmp:

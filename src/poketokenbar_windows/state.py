@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from .pokemon import (
     EGG_HATCH_THRESHOLD,
@@ -208,6 +212,49 @@ def companion_progress_percent(state: GameState) -> int:
     return min(100, max(0, round(value * 100 / max(1, target))))
 
 
+@contextmanager
+def _save_lock(path: Path):
+    # Coordinate current releases across processes. Older releases ignore this lock,
+    # but the distinct temporary names below still prevent their temp-file collision.
+    lock_path = path.with_name(f".{path.name}.lock")
+    with lock_path.open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+
+            for attempt in range(400):
+                try:
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if attempt == 399:
+                        raise
+                    time.sleep(0.025)
+            try:
+                yield
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _atomic_write(path: Path, contents: str) -> None:
+    # Distinct instances must never write through the same temporary filename.
+    tmp = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        tmp.write_text(contents, encoding="utf-8")
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 class StateStore:
     def __init__(self, path: Path | None = None):
         self.path = path or state_dir() / "state.json"
@@ -278,27 +325,24 @@ class StateStore:
             payload["active_has_growth_boost"] = payload["mon"].pop("has_growth_boost")
         serialized = json.dumps(payload, indent=2, ensure_ascii=False)
 
-        recovery = self.path.with_name("state-recovery.json")
-        try:
-            previous = json.loads(recovery.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            previous = None
-        if isinstance(previous, dict) and (
-            not isinstance(previous.get("catches"), list)
-            or not isinstance(previous.get("used_since_install"), int)
-        ):
-            previous = None
-        if not isinstance(previous, dict) or (
-            len(payload["catches"]) >= len(previous["catches"])
-            and payload["used_since_install"] >= previous["used_since_install"]
-        ):
-            backup_tmp = recovery.with_suffix(".tmp")
-            backup_tmp.write_text(serialized, encoding="utf-8")
-            backup_tmp.replace(recovery)
+        with _save_lock(self.path):
+            recovery = self.path.with_name("state-recovery.json")
+            try:
+                previous = json.loads(recovery.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                previous = None
+            if isinstance(previous, dict) and (
+                not isinstance(previous.get("catches"), list)
+                or not isinstance(previous.get("used_since_install"), int)
+            ):
+                previous = None
+            if not isinstance(previous, dict) or (
+                len(payload["catches"]) >= len(previous["catches"])
+                and payload["used_since_install"] >= previous["used_since_install"]
+            ):
+                _atomic_write(recovery, serialized)
 
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(serialized, encoding="utf-8")
-        tmp.replace(self.path)
+            _atomic_write(self.path, serialized)
 
 
 def usage_delta(
