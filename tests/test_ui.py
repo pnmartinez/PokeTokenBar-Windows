@@ -450,6 +450,24 @@ class UITests(unittest.TestCase):
             "Only stage 2 of 3",
         )
 
+    def test_bag_and_new_notification_preferences_are_localized_and_persisted(self):
+        state = GameState(language="gl", inventory={"rare_candy": 28, "mint": 2})
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+        self.assertEqual((model.rareCandyCount, model.mintCount), (28, 2))
+        self.assertEqual(model.rareCandyXp, "100M")
+        self.assertFalse(model.hasActiveCompanion)
+        self.assertIn("{amount}", model.strings["bag_candy_description"])
+        self.assertTrue(model.limitResetNotifications)
+        self.assertTrue(model.bankedResetNotifications)
+
+        model.setPreference("limitResetNotifications", False)
+        model.setPreference("bankedResetNotifications", False)
+        self.assertFalse(self.settings.value("limitResetNotifications", type=bool))
+        self.assertFalse(self.settings.value("bankedResetNotifications", type=bool))
+        reopened = QmlViewModel(state, self.settings, FakeUIAPI())
+        self.assertFalse(reopened.limitResetNotifications)
+        self.assertFalse(reopened.bankedResetNotifications)
+
     def test_legacy_desktop_pet_preferences_migrate_without_overwriting_current_values(self):
         self.settings.setValue("pet_visible", True)
         self.settings.setValue("pet_size", 113)

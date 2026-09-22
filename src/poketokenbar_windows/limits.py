@@ -593,6 +593,12 @@ def fetch_codex_limits(timeout: float = 20.0) -> ProviderLimits:
         windows=windows,
         reserve_active=reserve_active,
         reset_credits_available=reset_credits_available,
+        reset_credits_known=isinstance(
+            payload.get("rateLimitResetCredits")
+            if payload.get("rateLimitResetCredits") is not None
+            else payload.get("rate_limit_reset_credits"),
+            dict,
+        ),
         reset_credits=reset_credits,
     )
 

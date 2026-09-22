@@ -281,6 +281,14 @@ class StateTests(unittest.TestCase):
         self.assertEqual(events, ["evolved:2"])
         self.assertEqual(state.mon.current_id, 2)
 
+    def test_rare_candy_waits_for_a_hatched_pokemon(self):
+        state = GameState(inventory={"rare_candy": 1})
+        ok, message, events = use_item(state, "rare_candy", FakeAPI())
+        self.assertFalse(ok)
+        self.assertEqual(message, "No Pokemon to use a Rare Candy on")
+        self.assertEqual(events, [])
+        self.assertEqual(state.inventory["rare_candy"], 1)
+
     def test_limit_candy_is_once_per_window_after_initial_seed(self):
         state = GameState()
         first = {"claude": ProviderLimits(provider="claude", windows=[
@@ -595,6 +603,7 @@ class CodexLimitsTests(unittest.TestCase):
         self.assertEqual(result.windows[2].duration_minutes, 10_080)
         self.assertEqual(result.windows[2].identifier, "base_model_inference.primary")
         self.assertEqual(result.reset_credits_available, 1)
+        self.assertTrue(result.reset_credits_known)
         self.assertEqual(len(result.reset_credits), 1)
         self.assertEqual(result.reset_credits[0].title, "Full reset (Weekly + 5 hr)")
         self.assertEqual(result.reset_credits[0].expires_at.timestamp(), 1_789_000_000)

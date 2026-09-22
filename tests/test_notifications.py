@@ -14,6 +14,7 @@ from poketokenbar_windows.notifications import (
     WARNING_MIN,
     companion_notification,
     evaluate_limit_alerts,
+    evaluate_limit_changes,
     normalize_critical_threshold,
     normalize_warning_threshold,
 )
@@ -93,6 +94,61 @@ class LimitAlertTests(unittest.TestCase):
         )
         alerts, _ = evaluate_limit_alerts(limits)
         self.assertEqual({alert.provider for alert in alerts}, {"claude", "codex"})
+
+
+class LimitChangeTests(unittest.TestCase):
+    def test_only_a_fully_used_limit_reset_and_a_real_credit_increase_notify(self):
+        first = {
+            "codex": ProviderLimits(
+                "codex",
+                windows=[LimitWindow("5-hour", 100, identifier="codex.primary")],
+                reset_credits_available=1,
+                reset_credits_known=True,
+            )
+        }
+        changes, observations = evaluate_limit_changes(first)
+        self.assertEqual(changes, [])
+
+        next_reading = {
+            "codex": ProviderLimits(
+                "codex",
+                windows=[LimitWindow("5-hour", 0, identifier="codex.primary")],
+                reset_credits_available=2,
+                reset_credits_known=True,
+            )
+        }
+        changes, observations = evaluate_limit_changes(next_reading, observations)
+        self.assertEqual(
+            [(change.kind, change.previous_count, change.count) for change in changes],
+            [("recovered", 0, 0), ("banked", 1, 2)],
+        )
+        changes, _ = evaluate_limit_changes(next_reading, observations)
+        self.assertEqual(changes, [])
+
+    def test_partial_usage_and_partial_recovery_do_not_notify(self):
+        _, observations = evaluate_limit_changes(_limits(("Weekly", 99)))
+        changes, observations = evaluate_limit_changes(_limits(("Weekly", 0)), observations)
+        self.assertEqual(changes, [])
+        _, observations = evaluate_limit_changes(_limits(("Weekly", 100)), observations)
+        changes, _ = evaluate_limit_changes(_limits(("Weekly", 1)), observations)
+        self.assertEqual(changes, [])
+
+    def test_unknown_and_failed_credit_readings_do_not_create_false_grants(self):
+        known = {"codex": ProviderLimits(
+            "codex", reset_credits_available=1, reset_credits_known=True
+        )}
+        _, observations = evaluate_limit_changes(known)
+        unknown = {"codex": ProviderLimits("codex")}
+        changes, observations = evaluate_limit_changes(unknown, observations)
+        self.assertEqual(changes, [])
+        failed = {"codex": ProviderLimits("codex", error="unavailable")}
+        changes, observations = evaluate_limit_changes(failed, observations)
+        self.assertEqual(changes, [])
+        gained = {"codex": ProviderLimits(
+            "codex", reset_credits_available=2, reset_credits_known=True
+        )}
+        changes, _ = evaluate_limit_changes(gained, observations)
+        self.assertEqual([(item.previous_count, item.count) for item in changes], [(1, 2)])
 
 
 class CompanionNotificationTests(unittest.TestCase):

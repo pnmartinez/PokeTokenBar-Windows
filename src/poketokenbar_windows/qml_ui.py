@@ -31,6 +31,10 @@ from .formatting import (
     ordered_limit_windows,
 )
 from .notifications import (
+    BANKED_RESET_NOTIFICATIONS_KEY,
+    DEFAULT_BANKED_RESET_NOTIFICATIONS,
+    DEFAULT_LIMIT_RESET_NOTIFICATIONS,
+    LIMIT_RESET_NOTIFICATIONS_KEY,
     COMPANION_NOTIFICATIONS_KEY,
     CRITICAL_THRESHOLD_KEY,
     DEFAULT_COMPANION_NOTIFICATIONS,
@@ -52,6 +56,7 @@ from .pet_logic import PET_DEFAULT_SIZE, normalize_pet_size, settings_bool
 from .pokemon import (
     EGG_HATCH_THRESHOLD,
     MINT_PRICE,
+    RARE_CANDY_XP,
     RARE_CANDY_PRICE,
     SHINY_CHARM_PRICE,
     PokeAPIClient,
@@ -195,8 +200,10 @@ class QmlViewModel(QObject):
             "catches": [],
             "shopItems": [],
             "rareCandyCount": 0,
+            "rareCandyXp": compact_tokens(RARE_CANDY_XP),
             "mintCount": 0,
             "shinyCharmActive": False,
+            "hasActiveCompanion": state.mon is not None,
             "representativeFollowsCurrent": state.representative_species_id is None,
             "refreshMinutes": int(settings.value("refresh_minutes", 5)),
             "petEnabled": settings_bool(settings.value(PET_ENABLED_KEY, False), False),
@@ -220,6 +227,18 @@ class QmlViewModel(QObject):
             "limitNotifications": settings_bool(
                 settings.value(LIMIT_NOTIFICATIONS_KEY, DEFAULT_LIMIT_NOTIFICATIONS),
                 DEFAULT_LIMIT_NOTIFICATIONS,
+            ),
+            "limitResetNotifications": settings_bool(
+                settings.value(
+                    LIMIT_RESET_NOTIFICATIONS_KEY, DEFAULT_LIMIT_RESET_NOTIFICATIONS
+                ),
+                DEFAULT_LIMIT_RESET_NOTIFICATIONS,
+            ),
+            "bankedResetNotifications": settings_bool(
+                settings.value(
+                    BANKED_RESET_NOTIFICATIONS_KEY, DEFAULT_BANKED_RESET_NOTIFICATIONS
+                ),
+                DEFAULT_BANKED_RESET_NOTIFICATIONS,
             ),
             "companionNotifications": settings_bool(
                 settings.value(
@@ -337,11 +356,17 @@ class QmlViewModel(QObject):
     rareCandyCount = Property(
         int, lambda self: self._values["rareCandyCount"], notify=dataChanged
     )
+    rareCandyXp = Property(
+        str, lambda self: self._values["rareCandyXp"], notify=dataChanged
+    )
     mintCount = Property(
         int, lambda self: self._values["mintCount"], notify=dataChanged
     )
     shinyCharmActive = Property(
         bool, lambda self: self._values["shinyCharmActive"], notify=dataChanged
+    )
+    hasActiveCompanion = Property(
+        bool, lambda self: self._values["hasActiveCompanion"], notify=dataChanged
     )
     representativeFollowsCurrent = Property(
         bool, lambda self: self._values["representativeFollowsCurrent"], notify=dataChanged
@@ -376,6 +401,12 @@ class QmlViewModel(QObject):
     )
     limitNotifications = Property(
         bool, lambda self: self._values["limitNotifications"], notify=dataChanged
+    )
+    limitResetNotifications = Property(
+        bool, lambda self: self._values["limitResetNotifications"], notify=dataChanged
+    )
+    bankedResetNotifications = Property(
+        bool, lambda self: self._values["bankedResetNotifications"], notify=dataChanged
     )
     companionNotifications = Property(
         bool, lambda self: self._values["companionNotifications"], notify=dataChanged
@@ -488,6 +519,7 @@ class QmlViewModel(QObject):
             rareCandyCount=int(state.inventory.get("rare_candy", 0)),
             mintCount=int(state.inventory.get("mint", 0)),
             shinyCharmActive=state.shiny_charm_active,
+            hasActiveCompanion=state.mon is not None,
             representativeFollowsCurrent=state.representative_species_id is None,
             language=language,
             strings=ui_strings(language),
@@ -1010,6 +1042,8 @@ class QmlViewModel(QObject):
             "limitTimeMode": LIMIT_TIME_MODE_KEY,
             "forecastEnabled": FORECAST_ENABLED_KEY,
             "limitNotifications": LIMIT_NOTIFICATIONS_KEY,
+            "limitResetNotifications": LIMIT_RESET_NOTIFICATIONS_KEY,
+            "bankedResetNotifications": BANKED_RESET_NOTIFICATIONS_KEY,
             "companionNotifications": COMPANION_NOTIFICATIONS_KEY,
             "warningThreshold": WARNING_THRESHOLD_KEY,
             "criticalThreshold": CRITICAL_THRESHOLD_KEY,

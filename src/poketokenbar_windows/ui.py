@@ -102,6 +102,10 @@ from .limits import fetch_all_limits
 from .localization import localize_surface, text as translated_text
 from .models import ProviderLimits, UsageSnapshot
 from .notifications import (
+    BANKED_RESET_NOTIFICATIONS_KEY,
+    DEFAULT_BANKED_RESET_NOTIFICATIONS,
+    DEFAULT_LIMIT_RESET_NOTIFICATIONS,
+    LIMIT_RESET_NOTIFICATIONS_KEY,
     COMPANION_NOTIFICATIONS_KEY,
     CRITICAL_MAX,
     CRITICAL_MIN,
@@ -117,6 +121,7 @@ from .notifications import (
     WARNING_THRESHOLD_KEY,
     companion_notification,
     evaluate_limit_alerts,
+    evaluate_limit_changes,
     normalize_critical_threshold,
     normalize_warning_threshold,
 )
@@ -1171,14 +1176,41 @@ class MainWindow(QMainWindow):
         )
         limits_layout.addWidget(self.forecast_check)
         self.limit_notifications_check = self._setting_check(
-            "Limit notifications", LIMIT_NOTIFICATIONS_KEY, DEFAULT_LIMIT_NOTIFICATIONS
+            "Usage threshold alerts", LIMIT_NOTIFICATIONS_KEY, DEFAULT_LIMIT_NOTIFICATIONS
+        )
+        self.limit_notifications_check.setToolTip(
+            "Warning and critical alerts at the used-quota percentages below."
+        )
+        self.limit_reset_notifications_check = self._setting_check(
+            "Fully used limit resets",
+            LIMIT_RESET_NOTIFICATIONS_KEY,
+            DEFAULT_LIMIT_RESET_NOTIFICATIONS,
+        )
+        self.limit_reset_notifications_check.setToolTip(
+            "Notify only when a limit was 100% used and the next reading shows 100% available."
+        )
+        self.banked_reset_notifications_check = self._setting_check(
+            "New banked resets",
+            BANKED_RESET_NOTIFICATIONS_KEY,
+            DEFAULT_BANKED_RESET_NOTIFICATIONS,
+        )
+        self.banked_reset_notifications_check.setToolTip(
+            "Notify when the available banked reset count rises, showing old and new totals."
         )
         self.event_notifications_check = self._setting_check(
             "Pokémon event notifications",
             COMPANION_NOTIFICATIONS_KEY,
             DEFAULT_COMPANION_NOTIFICATIONS,
         )
-        for check in (self.limit_notifications_check, self.event_notifications_check):
+        self.event_notifications_check.setToolTip(
+            "Pokémon hatch, evolution, graduation and Rare Candy rewards."
+        )
+        for check in (
+            self.limit_notifications_check,
+            self.limit_reset_notifications_check,
+            self.banked_reset_notifications_check,
+            self.event_notifications_check,
+        ):
             limits_layout.addWidget(check)
         thresholds = QHBoxLayout()
         thresholds.addWidget(QLabel("Warning at"))
@@ -1965,9 +1997,22 @@ class TrayController(QObject):
         self.initial_reveal_played = False
         self.qa_capture_scheduled = False
         self.limit_alert_tiers: dict[str, int] = {}
+        self.limit_change_observations: dict[str, float | int] = {}
         self.limit_notifications_enabled = settings_bool(
             self.settings.value(LIMIT_NOTIFICATIONS_KEY, DEFAULT_LIMIT_NOTIFICATIONS),
             DEFAULT_LIMIT_NOTIFICATIONS,
+        )
+        self.limit_reset_notifications_enabled = settings_bool(
+            self.settings.value(
+                LIMIT_RESET_NOTIFICATIONS_KEY, DEFAULT_LIMIT_RESET_NOTIFICATIONS
+            ),
+            DEFAULT_LIMIT_RESET_NOTIFICATIONS,
+        )
+        self.banked_reset_notifications_enabled = settings_bool(
+            self.settings.value(
+                BANKED_RESET_NOTIFICATIONS_KEY, DEFAULT_BANKED_RESET_NOTIFICATIONS
+            ),
+            DEFAULT_BANKED_RESET_NOTIFICATIONS,
         )
         self.companion_notifications_enabled = settings_bool(
             self.settings.value(
@@ -2207,6 +2252,18 @@ class TrayController(QObject):
         self.limit_notifications_enabled = settings_bool(
             self.settings.value(LIMIT_NOTIFICATIONS_KEY, DEFAULT_LIMIT_NOTIFICATIONS),
             DEFAULT_LIMIT_NOTIFICATIONS,
+        )
+        self.limit_reset_notifications_enabled = settings_bool(
+            self.settings.value(
+                LIMIT_RESET_NOTIFICATIONS_KEY, DEFAULT_LIMIT_RESET_NOTIFICATIONS
+            ),
+            DEFAULT_LIMIT_RESET_NOTIFICATIONS,
+        )
+        self.banked_reset_notifications_enabled = settings_bool(
+            self.settings.value(
+                BANKED_RESET_NOTIFICATIONS_KEY, DEFAULT_BANKED_RESET_NOTIFICATIONS
+            ),
+            DEFAULT_BANKED_RESET_NOTIFICATIONS,
         )
         self.companion_notifications_enabled = settings_bool(
             self.settings.value(
@@ -2456,6 +2513,34 @@ class TrayController(QObject):
                     icon,
                     6_000,
                 )
+        changes, self.limit_change_observations = evaluate_limit_changes(
+            result.limits, self.limit_change_observations
+        )
+        for change in changes:
+            provider = PROVIDER_LABELS.get(change.provider, change.provider.title())
+            if change.kind == "recovered" and self.limit_reset_notifications_enabled:
+                self.tray.showMessage(
+                    translated_text(self.state.language, "limit_recovered_title"),
+                    translated_text(
+                        self.state.language, "limit_recovered_body",
+                        provider=provider,
+                        window=localize_surface(change.window_label, self.state.language),
+                    ),
+                    QSystemTrayIcon.MessageIcon.Information,
+                    6_000,
+                )
+            elif change.kind == "banked" and self.banked_reset_notifications_enabled:
+                self.tray.showMessage(
+                    translated_text(self.state.language, "banked_reset_granted_title"),
+                    translated_text(
+                        self.state.language, "banked_reset_granted_body",
+                        provider=provider,
+                        before=change.previous_count,
+                        after=change.count,
+                    ),
+                    QSystemTrayIcon.MessageIcon.Information,
+                    6_000,
+                )
         self._schedule_qa_capture()
         if self.companion_notifications_enabled:
             for event in result.events:
@@ -2507,6 +2592,8 @@ class TrayController(QObject):
                 "tray_tooltip": self.tray.toolTip(),
                 "notifications": {
                     "limit_alerts": self.limit_notifications_enabled,
+                    "depleted_limit_resets": self.limit_reset_notifications_enabled,
+                    "banked_reset_grants": self.banked_reset_notifications_enabled,
                     "warning_threshold": self.warning_threshold,
                     "critical_threshold": self.critical_threshold,
                     "companion_events": self.companion_notifications_enabled,
@@ -2563,6 +2650,7 @@ class TrayController(QObject):
             "Nature changed": "nature_changed",
             "Item not in bag": "item_not_in_bag",
             "No Pokemon to use a Mint on": "no_pokemon_for_mint",
+            "No Pokemon to use a Rare Candy on": "no_pokemon_for_candy",
         }
         if message in message_keys:
             message = translated_text(self.state.language, message_keys[message])

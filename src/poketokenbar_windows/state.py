@@ -415,6 +415,8 @@ def use_item(state: GameState, item: str, api: PokeAPIClient) -> tuple[bool, str
     if state.inventory.get(item, 0) <= 0:
         return False, "Item not in bag", []
     if item == "rare_candy":
+        if state.mon is None:
+            return False, "No Pokemon to use a Rare Candy on", []
         state.inventory[item] -= 1
         events = apply_usage(state, RARE_CANDY_XP, api)
         return True, "Rare Candy used", events

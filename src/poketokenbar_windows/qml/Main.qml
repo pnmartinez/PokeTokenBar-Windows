@@ -110,6 +110,7 @@ Rectangle {
                         const kind = useItemPopup.itemKind
                         useItemPopup.close()
                         appModel.useItem(kind)
+                        root.currentPage = 0
                     }
                 }
             }
@@ -316,6 +317,80 @@ Rectangle {
         radius: 11
         border.color: root.borderColor
         border.width: 1
+    }
+
+    component BagItemCard: Panel {
+        id: bagCard
+        property string itemKind: ""
+        property string itemName: ""
+        property string icon: ""
+        property string description: ""
+        property string effectHint: ""
+        property string unavailableReason: ""
+        property int count: 0
+        property bool passive: false
+        property bool canUse: false
+        Layout.fillWidth: true
+        Layout.preferredHeight: 98
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 5
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                Text {
+                    Layout.preferredWidth: 30
+                    Layout.alignment: Qt.AlignTop
+                    text: bagCard.icon
+                    font.pixelSize: 25
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    RowLayout {
+                        spacing: 6
+                        Text { text: bagCard.itemName; color: root.textColor; font.pixelSize: 14; font.weight: Font.DemiBold }
+                        Text {
+                            visible: !bagCard.passive
+                            text: "×" + bagCard.count
+                            color: root.mutedColor
+                            font.pixelSize: 11
+                            font.weight: Font.Bold
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: bagCard.description
+                        color: root.mutedColor
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Text {
+                    Layout.fillWidth: true
+                    text: bagCard.passive || bagCard.canUse ? bagCard.effectHint : bagCard.unavailableReason
+                    color: bagCard.passive ? root.successColor : root.mutedColor
+                    font.pixelSize: 10
+                    font.weight: bagCard.passive ? Font.DemiBold : Font.Normal
+                    wrapMode: Text.WordWrap
+                }
+                AppButton {
+                    visible: !bagCard.passive && bagCard.canUse
+                    text: appModel.strings.bag_use
+                    accessibleName: bagCard.itemName + ": " + text
+                    implicitHeight: 27
+                    leftPadding: 10
+                    rightPadding: 10
+                    onClicked: useItemPopup.confirm(bagCard.itemKind)
+                }
+            }
+        }
     }
 
     component InfoLabel: Text {
@@ -1616,59 +1691,57 @@ Rectangle {
                         columns: width > 740 ? 2 : 1
                         columnSpacing: 8
                         rowSpacing: 8
-                        Panel {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 126
-                            RowLayout {
-                                anchors.fill: parent; anchors.margins: 12; spacing: 12
-                                Item {
-                                    Layout.preferredWidth: 54
-                                    Layout.preferredHeight: 54
-                                    Text { anchors.centerIn: parent; text: "🍬"; font.pixelSize: 36 }
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Text { text: appModel.strings.rare_candy; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
-                                    Text { text: root.format(appModel.strings.available_count, {count: appModel.rareCandyCount}); color: root.mutedColor; font.pixelSize: 12 }
-                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.use_on_companion; enabled: appModel.rareCandyCount > 0; onClicked: useItemPopup.confirm("rare_candy") }
-                                }
-                            }
+                        BagItemCard {
+                            objectName: "rareCandyBagCard"
+                            visible: appModel.rareCandyCount > 0
+                            itemKind: "rare_candy"
+                            itemName: appModel.strings.rare_candy
+                            icon: "🍬"
+                            count: appModel.rareCandyCount
+                            description: root.format(appModel.strings.bag_candy_description, {amount: appModel.rareCandyXp})
+                            effectHint: root.format(appModel.strings.bag_candy_effect, {amount: appModel.rareCandyXp})
+                            unavailableReason: appModel.strings.bag_use_after_hatch
+                            canUse: appModel.hasActiveCompanion
                         }
-                        Panel {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 126
-                            RowLayout {
-                                anchors.fill: parent; anchors.margins: 12; spacing: 12
-                                Item {
-                                    Layout.preferredWidth: 54
-                                    Layout.preferredHeight: 54
-                                    Text { anchors.centerIn: parent; text: "🌿"; font.pixelSize: 36 }
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Text { text: appModel.strings.mint; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
-                                    Text { text: root.format(appModel.strings.available_count, {count: appModel.mintCount}); color: root.mutedColor; font.pixelSize: 12 }
-                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.change_nature; enabled: appModel.mintCount > 0; onClicked: useItemPopup.confirm("mint") }
-                                }
-                            }
+                        BagItemCard {
+                            objectName: "mintBagCard"
+                            visible: appModel.mintCount > 0
+                            itemKind: "mint"
+                            itemName: appModel.strings.mint
+                            icon: "🌿"
+                            count: appModel.mintCount
+                            description: appModel.strings.bag_mint_description
+                            effectHint: appModel.strings.bag_mint_effect
+                            unavailableReason: appModel.strings.bag_use_after_hatch
+                            canUse: appModel.hasActiveCompanion
                         }
-                        Panel {
-                            Layout.fillWidth: true
+                        BagItemCard {
+                            objectName: "shinyCharmBagCard"
+                            visible: appModel.shinyCharmActive
                             Layout.columnSpan: bagGrid.columns
-                            Layout.preferredHeight: 126
-                            RowLayout {
-                                anchors.fill: parent; anchors.margins: 12; spacing: 12
-                                Item {
-                                    Layout.preferredWidth: 54
-                                    Layout.preferredHeight: 54
-                                    Text { anchors.centerIn: parent; text: "✨"; font.pixelSize: 30 }
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Text { text: appModel.strings.shiny_charm; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
-                                    Text { text: appModel.shinyCharmActive ? appModel.strings.charm_active : appModel.strings.charm_inactive; color: appModel.shinyCharmActive ? root.successColor : root.mutedColor; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                                }
-                            }
+                            itemKind: "shiny_charm"
+                            itemName: appModel.strings.shiny_charm
+                            icon: "✨"
+                            description: appModel.strings.bag_charm_description
+                            effectHint: appModel.strings.bag_charm_effect
+                            passive: true
+                        }
+                    }
+                    Panel {
+                        visible: appModel.rareCandyCount === 0 && appModel.mintCount === 0 && !appModel.shinyCharmActive
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 14
+                        Layout.rightMargin: 14
+                        Layout.preferredHeight: 130
+                        Text {
+                            anchors.centerIn: parent
+                            width: parent.width - 28
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            text: appModel.strings.bag_empty
+                            color: root.mutedColor
+                            font.pixelSize: 13
+                            font.weight: Font.Medium
                         }
                     }
                 }
@@ -1875,7 +1948,7 @@ Rectangle {
 
                         Panel {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 374
+                            Layout.preferredHeight: 460
                             ColumnLayout {
                                 anchors.fill: parent; anchors.margins: 12; spacing: 7
                                 Text { text: appModel.strings.limits_alerts; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
@@ -1903,6 +1976,8 @@ Rectangle {
                                 }
                                 ToggleRow { label: appModel.strings.forecast_timed; detail: appModel.strings.forecast_help; checked: appModel.forecastEnabled; onChanged: value => appModel.setPreference("forecastEnabled", value) }
                                 ToggleRow { label: appModel.strings.limit_notifications; detail: appModel.strings.limit_notifications_help; checked: appModel.limitNotifications; onChanged: value => appModel.setPreference("limitNotifications", value) }
+                                ToggleRow { label: appModel.strings.limit_reset_notifications; detail: appModel.strings.limit_reset_notifications_help; checked: appModel.limitResetNotifications; onChanged: value => appModel.setPreference("limitResetNotifications", value) }
+                                ToggleRow { label: appModel.strings.banked_reset_notifications; detail: appModel.strings.banked_reset_notifications_help; checked: appModel.bankedResetNotifications; onChanged: value => appModel.setPreference("bankedResetNotifications", value) }
                                 ToggleRow { label: appModel.strings.pokemon_notifications; detail: appModel.strings.pokemon_notifications_help; checked: appModel.companionNotifications; onChanged: value => appModel.setPreference("companionNotifications", value) }
                                 RowLayout {
                                     Layout.fillWidth: true
