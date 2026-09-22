@@ -222,8 +222,16 @@ class StateStore:
             return GameState()
         try:
             mon_raw = raw.get("mon")
-            mon = MonState(**mon_raw) if isinstance(mon_raw, dict) else None
+            mon_fields = dict(mon_raw) if isinstance(mon_raw, dict) else None
+            legacy_growth_boost = mon_fields.pop("has_growth_boost", None) if mon_fields else None
+            mon = MonState(**mon_fields) if mon_fields is not None else None
             catches = [CatchRecord(**item) for item in raw.get("catches", []) if isinstance(item, dict)]
+            if mon is not None:
+                stored_boost = raw.get("active_has_growth_boost", legacy_growth_boost)
+                mon.has_growth_boost = (
+                    bool(stored_boost) if stored_boost is not None
+                    else sum(catch.base_id == mon.base_id for catch in catches) > 1
+                )
             representative_raw = raw.get("representative_species_id")
             try:
                 representative_species_id = int(representative_raw) if representative_raw is not None else None
@@ -263,8 +271,33 @@ class StateStore:
             return GameState()
 
     def save(self, state: GameState) -> None:
+        payload = asdict(state)
+        if payload["mon"] is not None:
+            # Older releases reject unknown fields inside "mon" and load a new game.
+            # They safely ignore unknown fields at the top level.
+            payload["active_has_growth_boost"] = payload["mon"].pop("has_growth_boost")
+        serialized = json.dumps(payload, indent=2, ensure_ascii=False)
+
+        recovery = self.path.with_name("state-recovery.json")
+        try:
+            previous = json.loads(recovery.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            previous = None
+        if isinstance(previous, dict) and (
+            not isinstance(previous.get("catches"), list)
+            or not isinstance(previous.get("used_since_install"), int)
+        ):
+            previous = None
+        if not isinstance(previous, dict) or (
+            len(payload["catches"]) >= len(previous["catches"])
+            and payload["used_since_install"] >= previous["used_since_install"]
+        ):
+            backup_tmp = recovery.with_suffix(".tmp")
+            backup_tmp.write_text(serialized, encoding="utf-8")
+            backup_tmp.replace(recovery)
+
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(asdict(state), indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp.write_text(serialized, encoding="utf-8")
         tmp.replace(self.path)
 
 
