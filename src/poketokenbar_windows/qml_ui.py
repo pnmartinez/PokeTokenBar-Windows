@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QEvent, Property, QObject, QSettings, Qt, QTimer, QUrl, Signal, Slot
@@ -303,7 +303,9 @@ class QmlViewModel(QObject):
     monthTrend = Property(
         "QVariantList", lambda self: self._values["monthTrend"], notify=dataChanged
     )
-    growthBoost = Property(bool, lambda self: self._values["growthBoost"], notify=dataChanged)
+    growthBoost = Property(
+        bool, lambda self: self._values["growthBoost"], notify=dataChanged
+    )
     collection = Property(
         "QVariantList", lambda self: self._values["collection"], notify=dataChanged
     )
@@ -792,7 +794,10 @@ class QmlViewModel(QObject):
                     "day": day,
                     "tokens": tokens,
                     "barHeight": max(2, round(tokens * 42 / peak)) if tokens else 2,
-                    "label": str(day) if day == 1 or day == len(daily) or ((day - 1) % 7 == 0 and len(daily) - day > 2) else "",
+                    "label": (
+                        str(day) if day == 1 or day == len(daily)
+                        or ((day - 1) % 7 == 0 and len(daily) - day > 2) else ""
+                    ),
                     "weekend": local_now.replace(day=day).weekday() >= 5,
                     "caption": self._tr("trend_day", day=day, tokens=compact_tokens(tokens)),
                 })
@@ -1212,8 +1217,10 @@ class QmlMainWindow(QMainWindow):
                 screen = QGuiApplication.primaryScreen()
                 if screen is not None:
                     area = screen.availableGeometry()
-                    self.move(area.x() + max(0, (area.width() - self.width()) // 2),
-                              area.y() + max(0, (area.height() - self.height()) // 2))
+                    self.move(
+                        area.x() + max(0, (area.width() - self.width()) // 2),
+                        area.y() + max(0, (area.height() - self.height()) // 2),
+                    )
 
     def save_window_geometry(self) -> None:
         if self._geometry_ready:

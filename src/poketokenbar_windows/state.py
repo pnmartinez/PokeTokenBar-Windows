@@ -36,7 +36,10 @@ class MonState:
 
     @property
     def stage_threshold(self) -> int:
-        return phase_threshold(self.rarity, len(self.path_ids), self.stage_index, 2 if self.has_growth_boost else 1)
+        return phase_threshold(
+            self.rarity, len(self.path_ids), self.stage_index,
+            2 if self.has_growth_boost else 1,
+        )
 
     @property
     def current_id(self) -> int:

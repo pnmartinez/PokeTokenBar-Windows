@@ -719,11 +719,17 @@ SCANNERS = {
 
 
 def _period_starts(now: datetime) -> tuple[datetime, datetime, datetime, datetime]:
-    local = now.astimezone()
-    today = local.replace(hour=0, minute=0, second=0, microsecond=0)
-    week = today - timedelta(days=today.weekday())
-    month = today.replace(day=1)
-    block = local - timedelta(hours=5)
+    local_day = now.astimezone().date()
+    # Resolve each midnight separately so a DST change inside the month does not
+    # shift the scan boundary by an hour.
+    today = datetime.combine(local_day, datetime.min.time()).astimezone()
+    week = datetime.combine(
+        local_day - timedelta(days=local_day.weekday()), datetime.min.time()
+    ).astimezone()
+    month = datetime.combine(
+        local_day.replace(day=1), datetime.min.time()
+    ).astimezone()
+    block = now.astimezone() - timedelta(hours=5)
     return today, week, month, block
 
 
@@ -757,17 +763,21 @@ def scan_all(now: datetime | None = None) -> tuple[UsageSnapshot, dict[str, str]
                 errors["cursor"] = last_scan_warning
         if not entries:
             continue
-        usage = ProviderUsage(provider=provider, entry_count=len(entries), month_daily=month_daily_series(entries, now))
+        usage = ProviderUsage(
+            provider=provider, entry_count=len(entries),
+            month_daily=month_daily_series(entries, now),
+        )
         for entry in entries:
-            if entry.date.astimezone().date() > today.date():
+            local_day = entry.date.astimezone().date()
+            if local_day > today.date():
                 continue
-            if entry.date >= month:
+            if local_day >= month.date():
                 usage.month_tokens += entry.total_tokens
-            if entry.date >= week:
+            if local_day >= week.date():
                 usage.week_tokens += entry.total_tokens
             if entry.date >= block:
                 usage.block_tokens += entry.total_tokens
-            if entry.date >= today:
+            if local_day >= today.date():
                 usage.today_tokens += entry.total_tokens
                 # Cursor is a subscription plan; don't invent a dollar cost from token rates.
                 if provider == "cursor":

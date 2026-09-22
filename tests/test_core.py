@@ -54,6 +54,7 @@ from poketokenbar_windows.pokemon import (
 from poketokenbar_windows.state import (
     CatchRecord,
     GameState,
+    MonState,
     StateStore,
     apply_limit_rewards,
     apply_usage,
@@ -809,10 +810,6 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(limit_reset_tray_warning(limits, now), "")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class MonthTrendTests(unittest.TestCase):
     def test_current_month_has_dense_local_days_and_matches_period_total(self):
         now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
@@ -848,8 +845,38 @@ class RepeatGrowthTests(unittest.TestCase):
         self.assertTrue(restored.mon.has_growth_boost)
         self.assertEqual(restored.mon.stage_threshold, state.mon.stage_threshold)
 
+    def test_discarded_unfinished_catch_does_not_unlock_boost(self):
+        state = GameState(
+            mon=MonState(1, [1, 2, 3], 0, 0, "common", False, "Hardy"),
+            catches=[CatchRecord(1, 1, [1, 2, 3], "common", False, "Hardy", "2026-09-01")],
+            used_since_install=1_000_000_000,
+        )
+        self.assertTrue(buy_egg(state, None)[0])
+        apply_usage(state, EGG_HATCH_THRESHOLD, FakeAPI())
+        self.assertFalse(state.mon.has_growth_boost)
+
+    def test_legacy_active_pokemon_defaults_to_normal_growth(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            path.write_text(json.dumps({"mon": {
+                "base_id": 1, "path_ids": [1, 2, 3], "stage_index": 0,
+                "used_at_stage": 0, "rarity": "common", "is_shiny": False, "nature": "Hardy",
+            }}), encoding="utf-8")
+            restored = StateStore(path).load()
+        self.assertIsNotNone(restored.mon)
+        self.assertFalse(restored.mon.has_growth_boost)
+
+    def test_boost_rounds_half_tokens_up_like_upstream(self):
+        standard = phase_threshold("common", 7, 3)
+        self.assertEqual(standard % 2, 1)
+        self.assertEqual(phase_threshold("common", 7, 3, 2), (standard + 1) // 2)
+
     def test_first_hatch_stays_at_normal_growth(self):
         state = GameState()
         apply_usage(state, EGG_HATCH_THRESHOLD, FakeAPI())
         self.assertFalse(state.mon.has_growth_boost)
         self.assertEqual(state.mon.stage_threshold, phase_threshold("common", 3, 0))
+
+
+if __name__ == "__main__":
+    unittest.main()

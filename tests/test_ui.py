@@ -105,6 +105,42 @@ class UITests(unittest.TestCase):
         self.assertEqual((second.width(), second.height()), (600, 680))
         self.assertEqual((second.x(), second.y()), (24, 32))
 
+    def test_qml_recovers_saved_window_from_disconnected_screen(self):
+        first = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(first.deleteLater)
+        first.show()
+        self.app.processEvents()
+        first.move(5000, 5000)
+        first.save_window_geometry()
+        first.hide()
+        second = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(second.deleteLater)
+        self.assertTrue(any(
+            second.frameGeometry().intersects(screen.availableGeometry())
+            for screen in self.app.screens()
+        ))
+
+    def test_qml_item_use_has_one_themed_confirmation_and_localized_feedback(self):
+        state = GameState(
+            mon=MonState(1, [1, 2, 3], 0, 0, "common", False, "Hardy"),
+            inventory={"rare_candy": 1, "mint": 0, "shiny_charm": 0},
+            language="gl",
+        )
+        window = QmlMainWindow(state, self.settings, FakeUIAPI())
+        self.addCleanup(window.deleteLater)
+        controller = TrayController.__new__(TrayController)
+        controller.state_lock = threading.Lock()
+        controller.state = state
+        controller.store = Mock()
+        controller.window = window
+        controller.api = FakeUIAPI()
+        controller.refresh = Mock()
+        with patch.object(QMessageBox, "question", side_effect=AssertionError("native dialog")):
+            controller._use_item("rare_candy")
+        self.assertEqual(controller.state.inventory["rare_candy"], 0)
+        self.assertEqual(window.view_model.feedbackText, "✓ Caramelo Raro usado")
+        controller.refresh.assert_called_once_with()
+
     def test_month_trend_and_repeat_badge_fit_home_layout(self):
         state = GameState(mon=MonState(1, [1, 2, 3], 0, 0, "common", False, "Hardy", True), language="gl")
         window = QmlMainWindow(state, self.settings, FakeUIAPI())
@@ -128,6 +164,13 @@ class UITests(unittest.TestCase):
         self.assertEqual(window.view_model.monthTrend[2]["caption"], "Día 3 · 7 tokens")
         self.assertLessEqual(trend.mapToItem(home, 0, trend.height()).y(), limits.mapToItem(home, 0, 0).y())
         self.assertLessEqual(limits.mapToItem(home, 0, limits.height()).y(), home.height())
+        full_month = UsageSnapshot(
+            providers={"codex": ProviderUsage("codex", month_tokens=30, month_daily=[1] * 30)},
+            scanned_at=datetime(2026, 9, 30, 12, tzinfo=timezone.utc),
+        )
+        window.render(RefreshResult(full_month, {}, {}, state, [], None, "Bulbasaur"))
+        self.assertEqual(window.view_model.monthTrend[28]["label"], "")
+        self.assertEqual(window.view_model.monthTrend[29]["label"], "30")
 
     def test_qml_home_has_no_page_level_scroll_and_lists_only_overflow_as_needed(self):
         qml = (

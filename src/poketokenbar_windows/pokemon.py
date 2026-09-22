@@ -51,7 +51,8 @@ def phase_threshold(rarity: str, total_forms: int, stage_index: int, growth_mult
     i = stage_index + 1
     denominator = k * (k + 1) / 2.0
     standard = round(GRADUATION_TOTALS[rarity] * i / denominator)
-    return max(1, round(standard / max(1, growth_multiplier)))
+    multiplier = max(1, growth_multiplier)
+    return max(1, (standard + multiplier // 2) // multiplier)
 
 
 def egg_price(tier: str | None = None) -> int:

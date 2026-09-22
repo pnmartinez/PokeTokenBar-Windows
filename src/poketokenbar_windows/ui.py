@@ -2554,9 +2554,16 @@ class TrayController(QObject):
                     self.store.save(candidate)
                     self.state = candidate
         except Exception:  # noqa: BLE001
-            QMessageBox.warning(self.window, "PokeTokenBar", translated_text(self.state.language, "action_failed"))
+            QMessageBox.warning(
+                self.window, "PokeTokenBar", translated_text(self.state.language, "action_failed")
+            )
             return False
-        message_keys = {"Rare Candy used": "rare_candy_used", "Nature changed": "nature_changed", "Item not in bag": "item_not_in_bag", "No Pokemon to use a Mint on": "no_pokemon_for_mint"}
+        message_keys = {
+            "Rare Candy used": "rare_candy_used",
+            "Nature changed": "nature_changed",
+            "Item not in bag": "item_not_in_bag",
+            "No Pokemon to use a Mint on": "no_pokemon_for_mint",
+        }
         if message in message_keys:
             message = translated_text(self.state.language, message_keys[message])
         if not ok:
@@ -2585,7 +2592,9 @@ class TrayController(QObject):
             if QMessageBox.question(
                 self.window,
                 translated_text(self.state.language, "use_item_title"),
-                translated_text(self.state.language, "use_item_question", item=labels.get(item, item)),
+                translated_text(
+                    self.state.language, "use_item_question", item=labels.get(item, item)
+                ),
             ) != QMessageBox.StandardButton.Yes:
                 return
         old_nature = self.state.mon.nature if self.state.mon else None
@@ -2594,7 +2603,11 @@ class TrayController(QObject):
             refresh=item == "rare_candy",
         )
         if item == "mint" and self.state.mon and self.state.mon.nature != old_nature:
-            self.window.action_feedback.setText("✓ " + translated_text(self.state.language, "new_nature", nature=self.state.mon.nature))
+            self.window.action_feedback.setText(
+                "✓ " + translated_text(
+                    self.state.language, "new_nature", nature=self.state.mon.nature
+                )
+            )
 
     def _buy_egg(self, tier: str | None) -> None:
         tier_label = (tier or "normal").title()
