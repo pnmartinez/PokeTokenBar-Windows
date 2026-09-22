@@ -2554,8 +2554,11 @@ class TrayController(QObject):
                     self.store.save(candidate)
                     self.state = candidate
         except Exception:  # noqa: BLE001
-            QMessageBox.warning(self.window, "PokeTokenBar", "The action could not be completed. Your save was not changed.")
+            QMessageBox.warning(self.window, "PokeTokenBar", translated_text(self.state.language, "action_failed"))
             return False
+        message_keys = {"Rare Candy used": "rare_candy_used", "Nature changed": "nature_changed", "Item not in bag": "item_not_in_bag", "No Pokemon to use a Mint on": "no_pokemon_for_mint"}
+        if message in message_keys:
+            message = translated_text(self.state.language, message_keys[message])
         if not ok:
             QMessageBox.information(self.window, "PokeTokenBar", message)
             return False
@@ -2578,19 +2581,20 @@ class TrayController(QObject):
 
     def _use_item(self, item: str) -> None:
         labels = {"rare_candy": "Rare Candy", "mint": "Mint"}
-        if QMessageBox.question(
-            self.window,
-            "Use item",
-            f"Use one {labels.get(item, item)} on your current companion?",
-        ) != QMessageBox.StandardButton.Yes:
-            return
+        if not isinstance(self.window, QmlMainWindow):
+            if QMessageBox.question(
+                self.window,
+                translated_text(self.state.language, "use_item_title"),
+                translated_text(self.state.language, "use_item_question", item=labels.get(item, item)),
+            ) != QMessageBox.StandardButton.Yes:
+                return
         old_nature = self.state.mon.nature if self.state.mon else None
         self._mutate_state(
             lambda state: use_item(state, item, self.api),
             refresh=item == "rare_candy",
         )
         if item == "mint" and self.state.mon and self.state.mon.nature != old_nature:
-            self.window.action_feedback.setText(f"✓ New nature: {self.state.mon.nature}")
+            self.window.action_feedback.setText("✓ " + translated_text(self.state.language, "new_nature", nature=self.state.mon.nature))
 
     def _buy_egg(self, tier: str | None) -> None:
         tier_label = (tier or "normal").title()
@@ -2611,6 +2615,8 @@ class TrayController(QObject):
             self.refresh()
 
     def quit(self) -> None:
+        if isinstance(self.window, QmlMainWindow):
+            self.window.save_window_geometry()
         self.store.save(self.state)
         self.floating_pet.shutdown()
         self.tray.hide()

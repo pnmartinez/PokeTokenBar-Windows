@@ -90,6 +90,45 @@ class UITests(unittest.TestCase):
         self.assertEqual(window.minimumHeight(), 640)
         self.assertEqual((window.width(), window.height()), (560, 740))
 
+    def test_qml_restores_main_window_size_and_position(self):
+        first = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        first.show()
+        self.app.processEvents()
+        first.resize(600, 680)
+        first.move(24, 32)
+        self.app.processEvents()
+        first.close()
+        self.assertFalse(first.isVisible())
+        second = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(second.deleteLater)
+        self.addCleanup(first.deleteLater)
+        self.assertEqual((second.width(), second.height()), (600, 680))
+        self.assertEqual((second.x(), second.y()), (24, 32))
+
+    def test_month_trend_and_repeat_badge_fit_home_layout(self):
+        state = GameState(mon=MonState(1, [1, 2, 3], 0, 0, "common", False, "Hardy", True), language="gl")
+        window = QmlMainWindow(state, self.settings, FakeUIAPI())
+        self.addCleanup(window.deleteLater)
+        self.addCleanup(window.hide)
+        snapshot = UsageSnapshot(
+            providers={"codex": ProviderUsage("codex", today_tokens=7, month_tokens=12, month_daily=[5, 0, 7])},
+            scanned_at=datetime(2026, 9, 3, 12, tzinfo=timezone.utc),
+        )
+        window.render(RefreshResult(snapshot, {}, {}, state, [], None, "Bulbasaur"))
+        window.show()
+        self.app.processEvents()
+        root = window.quick.rootObject()
+        home = root.findChild(QObject, "homePage")
+        trend = root.findChild(QObject, "monthTrendPanel")
+        limits = root.findChild(QObject, "limitsPanel")
+        badge = root.findChild(QObject, "growthBoostBadge")
+        self.assertTrue(trend.isVisible())
+        self.assertTrue(badge.isVisible())
+        self.assertEqual(window.view_model.monthTrend[1]["tokens"], 0)
+        self.assertEqual(window.view_model.monthTrend[2]["caption"], "Día 3 · 7 tokens")
+        self.assertLessEqual(trend.mapToItem(home, 0, trend.height()).y(), limits.mapToItem(home, 0, 0).y())
+        self.assertLessEqual(limits.mapToItem(home, 0, limits.height()).y(), home.height())
+
     def test_qml_home_has_no_page_level_scroll_and_lists_only_overflow_as_needed(self):
         qml = (
             Path(__file__).resolve().parents[1]

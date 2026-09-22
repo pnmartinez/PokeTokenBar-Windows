@@ -35,6 +35,7 @@ class ProviderUsage:
     block_tokens: int = 0
     today_cost: float = 0.0
     entry_count: int = 0
+    month_daily: list[int] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -61,6 +62,14 @@ class UsageSnapshot:
     @property
     def today_cost(self) -> float:
         return sum(v.today_cost for v in self.providers.values())
+
+    @property
+    def month_daily(self) -> list[int]:
+        days = max((len(value.month_daily) for value in self.providers.values()), default=0)
+        return [
+            sum(value.month_daily[day] for value in self.providers.values() if day < len(value.month_daily))
+            for day in range(days)
+        ]
 
 
 @dataclass(slots=True)

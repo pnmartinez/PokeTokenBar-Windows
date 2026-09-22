@@ -40,6 +40,7 @@ from poketokenbar_windows.models import (
     LimitWindow,
     ProviderLimits,
     RateLimitResetCredit,
+    UsageEntry,
 )
 from poketokenbar_windows.pokemon import (
     EGG_HATCH_THRESHOLD,
@@ -51,6 +52,7 @@ from poketokenbar_windows.pokemon import (
     rarity_from,
 )
 from poketokenbar_windows.state import (
+    CatchRecord,
     GameState,
     StateStore,
     apply_limit_rewards,
@@ -58,8 +60,9 @@ from poketokenbar_windows.state import (
     buy_egg,
     companion_progress_percent,
     usage_delta,
+    use_item,
 )
-from poketokenbar_windows.usage import parse_claude_object, parse_codex_object
+from poketokenbar_windows.usage import month_daily_series, parse_claude_object, parse_codex_object, scan_all
 from poketokenbar_windows.windows import (
     APP_NAME,
     REGISTRY_VALUE_NAME,
@@ -808,3 +811,45 @@ class FormattingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MonthTrendTests(unittest.TestCase):
+    def test_current_month_has_dense_local_days_and_matches_period_total(self):
+        now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+        entries = [
+            UsageEntry("old", datetime(2026, 8, 31, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=99),
+            UsageEntry("one", datetime(2026, 9, 1, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=5),
+            UsageEntry("three", datetime(2026, 9, 3, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=7),
+            UsageEntry("future", datetime(2026, 9, 6, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=20),
+        ]
+        self.assertEqual(month_daily_series(entries, now), [5, 0, 7, 0])
+        with patch("poketokenbar_windows.usage.SCANNERS", {"codex": lambda since: entries}):
+            snapshot, errors = scan_all(now)
+        self.assertFalse(errors)
+        self.assertEqual(snapshot.month_daily, [5, 0, 7, 0])
+        self.assertEqual(sum(snapshot.month_daily), snapshot.month_tokens)
+
+
+class RepeatGrowthTests(unittest.TestCase):
+    def test_repeat_base_species_gets_persistent_half_threshold(self):
+        state = GameState(catches=[CatchRecord(3, 1, [1, 2, 3], "common", False, "Hardy", "2026-09-01")])
+        apply_usage(state, EGG_HATCH_THRESHOLD, FakeAPI())
+        self.assertTrue(state.mon.has_growth_boost)
+        self.assertEqual(state.mon.stage_threshold * 2, phase_threshold("common", 3, 0))
+        state.inventory["rare_candy"] = 1
+        ok, _, events = use_item(state, "rare_candy", FakeAPI())
+        self.assertTrue(ok)
+        self.assertEqual(events, ["evolved:2"])
+        self.assertEqual(state.mon.used_at_stage, 100_000_000 - phase_threshold("common", 3, 0, 2))
+        with tempfile.TemporaryDirectory() as folder:
+            store = StateStore(Path(folder) / "state.json")
+            store.save(state)
+            restored = store.load()
+        self.assertTrue(restored.mon.has_growth_boost)
+        self.assertEqual(restored.mon.stage_threshold, state.mon.stage_threshold)
+
+    def test_first_hatch_stays_at_normal_growth(self):
+        state = GameState()
+        apply_usage(state, EGG_HATCH_THRESHOLD, FakeAPI())
+        self.assertFalse(state.mon.has_growth_boost)
+        self.assertEqual(state.mon.stage_threshold, phase_threshold("common", 3, 0))

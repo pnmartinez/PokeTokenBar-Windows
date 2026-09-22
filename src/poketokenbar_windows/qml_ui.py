@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from datetime import datetime
 from typing import Any
 
 from PySide6.QtCore import QEvent, Property, QObject, QSettings, Qt, QTimer, QUrl, Signal, Slot
@@ -55,7 +56,6 @@ from .pokemon import (
     SHINY_CHARM_PRICE,
     PokeAPIClient,
     egg_price,
-    phase_threshold,
 )
 from .state import GameState, companion_progress_percent, owned_representative_options
 from .usage import PROVIDER_LABELS
@@ -181,6 +181,8 @@ class QmlViewModel(QObject):
             "weekTokens": "—",
             "wallet": compact_tokens(state.wallet),
             "providers": [],
+            "monthTrend": [],
+            "growthBoost": False,
             "limits": [],
             "collection": [],
             "dexEntries": [],
@@ -298,6 +300,10 @@ class QmlViewModel(QObject):
     limits = Property(
         "QVariantList", lambda self: self._values["limits"], notify=dataChanged
     )
+    monthTrend = Property(
+        "QVariantList", lambda self: self._values["monthTrend"], notify=dataChanged
+    )
+    growthBoost = Property(bool, lambda self: self._values["growthBoost"], notify=dataChanged)
     collection = Property(
         "QVariantList", lambda self: self._values["collection"], notify=dataChanged
     )
@@ -457,7 +463,7 @@ class QmlViewModel(QObject):
                 f"{self._tr('stage')} {mon.stage_index + 1}/{len(mon.path_ids)}"
             )
             value = mon.used_at_stage
-            target = phase_threshold(mon.rarity, len(mon.path_ids), mon.stage_index)
+            target = mon.stage_threshold
             if mon.stage_index + 1 < len(mon.path_ids):
                 next_name = self.api.localized_name(
                     mon.path_ids[mon.stage_index + 1], language
@@ -469,6 +475,7 @@ class QmlViewModel(QObject):
 
         self._values.update(
             companionName=name,
+            growthBoost=bool(state.mon and state.mon.has_growth_boost),
             companionSubtitle=subtitle,
             companionProgress=progress,
             companionProgressText=f"{compact_tokens(value)} / {compact_tokens(target)}",
@@ -774,6 +781,22 @@ class QmlViewModel(QObject):
                 }
             )
 
+        daily = snapshot.month_daily
+        peak = max(daily, default=0)
+        local_now = (snapshot.scanned_at or datetime.now().astimezone()).astimezone()
+        month_trend = []
+        if peak > 0:
+            for index, tokens in enumerate(daily):
+                day = index + 1
+                month_trend.append({
+                    "day": day,
+                    "tokens": tokens,
+                    "barHeight": max(2, round(tokens * 42 / peak)) if tokens else 2,
+                    "label": str(day) if day == 1 or day == len(daily) or ((day - 1) % 7 == 0 and len(daily) - day > 2) else "",
+                    "weekend": local_now.replace(day=day).weekday() >= 5,
+                    "caption": self._tr("trend_day", day=day, tokens=compact_tokens(tokens)),
+                })
+
         display_mode = normalize_limit_display_mode(
             self.settings.value(LIMIT_DISPLAY_MODE_KEY, DEFAULT_LIMIT_DISPLAY_MODE)
         )
@@ -901,6 +924,7 @@ class QmlViewModel(QObject):
             weekTokens=compact_tokens(snapshot.week_tokens),
             providers=providers,
             limits=limits,
+            monthTrend=month_trend,
         )
         self._render_state()
         self.dataChanged.emit()
@@ -1126,6 +1150,12 @@ class QmlMainWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.setMinimumSize(520, 640)
         self.resize(560, 740)
+        self.settings = settings
+        self._geometry_ready = False
+        self._geometry_timer = QTimer(self)
+        self._geometry_timer.setSingleShot(True)
+        self._geometry_timer.setInterval(250)
+        self._geometry_timer.timeout.connect(self.save_window_geometry)
 
         self.view_model = QmlViewModel(state, settings, api)
         self.view_model.refreshRequested.connect(self.refresh_requested)
@@ -1156,6 +1186,8 @@ class QmlMainWindow(QMainWindow):
         self.setCentralWidget(self.quick)
         self.statusBar().hide()
         self.windows_snap_enabled = _enable_windows_snap(int(self.winId()))
+        self._restore_window_geometry()
+        self._geometry_ready = True
 
         self.refresh_button = _ButtonProxy(self.view_model.set_refresh_enabled, self)
         self.refresh_status = _TextProxy(self.view_model.set_status, self)
@@ -1168,6 +1200,35 @@ class QmlMainWindow(QMainWindow):
         self.buy_egg_btn = _ButtonProxy(parent=self)
         self.buy_uncommon_egg_btn = _ButtonProxy(parent=self)
         self.buy_rare_egg_btn = _ButtonProxy(parent=self)
+
+    def _restore_window_geometry(self) -> None:
+        saved = self.settings.value("main_window_geometry")
+        if saved and self.restoreGeometry(saved):
+            visible = any(
+                screen.availableGeometry().intersects(self.frameGeometry())
+                for screen in QGuiApplication.screens()
+            )
+            if not visible:
+                screen = QGuiApplication.primaryScreen()
+                if screen is not None:
+                    area = screen.availableGeometry()
+                    self.move(area.x() + max(0, (area.width() - self.width()) // 2),
+                              area.y() + max(0, (area.height() - self.height()) // 2))
+
+    def save_window_geometry(self) -> None:
+        if self._geometry_ready:
+            self.settings.setValue("main_window_geometry", self.saveGeometry())
+            self.settings.sync()
+
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        if self._geometry_ready and self.isVisible():
+            self._geometry_timer.start()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._geometry_ready and self.isVisible():
+            self._geometry_timer.start()
 
     def _sync_window_state(self) -> None:
         self.view_model._set("windowMaximized", self.isMaximized())
@@ -1225,5 +1286,7 @@ class QmlMainWindow(QMainWindow):
         QTimer.singleShot(1200, lambda: self.view_model.set_reveal(False))
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._geometry_timer.stop()
+        self.save_window_geometry()
         event.ignore()
         self.hide()

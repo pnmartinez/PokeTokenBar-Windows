@@ -12,6 +12,7 @@ Rectangle {
     border.width: 1
 
     property int currentPage: 0
+    property int trendHoveredIndex: -1
     property string collectionMode: "dex"
     property int selectedDexIndex: -1
     readonly property var selectedDex: selectedDexIndex >= 0 && selectedDexIndex < appModel.dexBrowseEntries.length
@@ -69,6 +70,50 @@ Rectangle {
     Connections {
         target: root.Window.window
         function onActiveFocusItemChanged() { Qt.callLater(root.revealKeyboardFocus) }
+    }
+
+    Popup {
+        id: useItemPopup
+        objectName: "useItemPopup"
+        property string itemKind: ""
+        function confirm(kind) { itemKind = kind; open() }
+        parent: Overlay.overlay
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        width: Math.min(370, root.width - 32)
+        height: 158
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 16
+        Overlay.modal: Rectangle { color: "#80000000" }
+        background: Rectangle { color: root.panelColor; radius: 12; border.color: root.borderColor; border.width: 1 }
+        contentItem: ColumnLayout {
+            spacing: 11
+            Text { text: appModel.strings.use_item_title; color: root.textColor; font.pixelSize: 17; font.weight: Font.DemiBold }
+            Text {
+                Layout.fillWidth: true
+                text: root.format(appModel.strings.use_item_question, {item: useItemPopup.itemKind === "rare_candy" ? appModel.strings.rare_candy : appModel.strings.mint})
+                color: root.mutedColor
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+            }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: 8
+                AppButton { text: appModel.strings.cancel; onClicked: useItemPopup.close() }
+                AppButton {
+                    text: appModel.strings.confirm_use
+                    highlighted: true
+                    onClicked: {
+                        const kind = useItemPopup.itemKind
+                        useItemPopup.close()
+                        appModel.useItem(kind)
+                    }
+                }
+            }
+        }
     }
 
     component PageScroll: ScrollView {
@@ -925,11 +970,16 @@ Rectangle {
                                     anchors.centerIn: parent
                                     width: 48; height: 48
                                     visible: appModel.loading || appModel.revealActive
-                                    SequentialAnimation on rotation {
+                                    property int shakeFrame: 0
+                                    transform: Translate {
+                                        x: [0, -5, 5, -4, 4, -2, 2, 0][revealBall.shakeFrame] * revealBall.width / 96
+                                        y: revealBall.height * 0.1
+                                    }
+                                    Timer {
+                                        interval: 90
                                         running: revealBall.visible
-                                        loops: Animation.Infinite
-                                        NumberAnimation { from: -18; to: 18; duration: 200; easing.type: Easing.InOutQuad }
-                                        NumberAnimation { from: 18; to: -18; duration: 200; easing.type: Easing.InOutQuad }
+                                        repeat: true
+                                        onTriggered: revealBall.shakeFrame = (revealBall.shakeFrame + 1) % 8
                                     }
                                 }
                             }
@@ -949,7 +999,25 @@ Rectangle {
                                         onClicked: appModel.requestRefresh()
                                     }
                                 }
-                                Text { text: appModel.companionSubtitle; color: root.mutedColor; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    Text { text: appModel.companionSubtitle; color: root.mutedColor; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    Rectangle {
+                                        objectName: "growthBoostBadge"
+                                        visible: appModel.growthBoost
+                                        Layout.preferredWidth: 30
+                                        Layout.preferredHeight: 18
+                                        radius: 9
+                                        color: root.darkMode ? "#503b22" : "#fff0d6"
+                                        Text { anchors.centerIn: parent; text: appModel.strings.repeat_boost; color: root.warningColor; font.pixelSize: 10; font.weight: Font.Bold }
+                                        HoverHandler { id: growthHover }
+                                        ToolTip.visible: growthHover.hovered
+                                        ToolTip.delay: 450
+                                        ToolTip.text: appModel.strings.repeat_boost_help
+                                        Accessible.name: appModel.strings.repeat_boost_help
+                                    }
+                                }
                                 Text { objectName: "companionEvolution"; text: appModel.companionEvolutionText; color: appModel.darkMode ? "#96a5bc" : "#66758a"; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
                                 Item { Layout.fillHeight: true }
                                 RowLayout {
@@ -971,6 +1039,78 @@ Rectangle {
                         MetricCard { label: appModel.strings.estimated_cost; value: appModel.todayCost }
                         MetricCard { label: appModel.strings.this_week; value: appModel.weekTokens }
                         MetricCard { label: appModel.strings.wallet; value: appModel.wallet }
+                    }
+
+                    Panel {
+                        id: trendPanel
+                        objectName: "monthTrendPanel"
+                        visible: appModel.monthTrend.length > 0
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: visible ? 105 : 0
+                        Layout.minimumHeight: Layout.preferredHeight
+                        Layout.maximumHeight: Layout.preferredHeight
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 2
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: appModel.strings.month_trend; color: root.textColor; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    text: appModel.monthTrend.length > 0
+                                        ? appModel.monthTrend[root.trendHoveredIndex >= 0 ? Math.min(root.trendHoveredIndex, appModel.monthTrend.length - 1) : appModel.monthTrend.length - 1].caption : ""
+                                    color: root.mutedColor
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            Row {
+                                id: trendBars
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                spacing: 2
+                                Repeater {
+                                    model: appModel.monthTrend
+                                    delegate: Item {
+                                        required property var modelData
+                                        required property int index
+                                        width: Math.max(2, (trendBars.width - Math.max(0, appModel.monthTrend.length - 1) * trendBars.spacing) / Math.max(1, appModel.monthTrend.length))
+                                        height: trendBars.height
+                                        Rectangle {
+                                            anchors.bottom: parent.bottom
+                                            anchors.bottomMargin: 17
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            width: Math.max(3, parent.width - 2)
+                                            height: modelData.barHeight
+                                            radius: 2
+                                            color: index === appModel.monthTrend.length - 1 ? root.accentColor : (root.darkMode ? "#6c8ed0" : "#90addd")
+                                        }
+                                        Rectangle {
+                                            visible: modelData.weekend
+                                            anchors.bottom: parent.bottom
+                                            anchors.bottomMargin: 12
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            width: 2; height: 2; radius: 1
+                                            color: root.mutedColor
+                                        }
+                                        Text {
+                                            anchors.bottom: parent.bottom
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            text: modelData.label
+                                            color: root.mutedColor
+                                            font.pixelSize: 8
+                                        }
+                                        HoverHandler {
+                                            id: trendHover
+                                            onHoveredChanged: root.trendHoveredIndex = hovered ? index : -1
+                                        }
+                                        ToolTip.visible: trendHover.hovered
+                                        ToolTip.text: modelData.caption
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     Panel {
@@ -1490,7 +1630,7 @@ Rectangle {
                                     Layout.fillWidth: true
                                     Text { text: appModel.strings.rare_candy; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
                                     Text { text: root.format(appModel.strings.available_count, {count: appModel.rareCandyCount}); color: root.mutedColor; font.pixelSize: 12 }
-                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.use_on_companion; enabled: appModel.rareCandyCount > 0; onClicked: appModel.useItem("rare_candy") }
+                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.use_on_companion; enabled: appModel.rareCandyCount > 0; onClicked: useItemPopup.confirm("rare_candy") }
                                 }
                             }
                         }
@@ -1508,7 +1648,7 @@ Rectangle {
                                     Layout.fillWidth: true
                                     Text { text: appModel.strings.mint; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
                                     Text { text: root.format(appModel.strings.available_count, {count: appModel.mintCount}); color: root.mutedColor; font.pixelSize: 12 }
-                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.change_nature; enabled: appModel.mintCount > 0; onClicked: appModel.useItem("mint") }
+                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.change_nature; enabled: appModel.mintCount > 0; onClicked: useItemPopup.confirm("mint") }
                                 }
                             }
                         }

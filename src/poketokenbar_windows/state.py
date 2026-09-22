@@ -32,6 +32,11 @@ class MonState:
     rarity: str
     is_shiny: bool
     nature: str
+    has_growth_boost: bool = False
+
+    @property
+    def stage_threshold(self) -> int:
+        return phase_threshold(self.rarity, len(self.path_ids), self.stage_index, 2 if self.has_growth_boost else 1)
 
     @property
     def current_id(self) -> int:
@@ -196,7 +201,7 @@ def companion_progress_percent(state: GameState) -> int:
     else:
         mon = state.mon
         value = mon.used_at_stage
-        target = phase_threshold(mon.rarity, len(mon.path_ids), mon.stage_index)
+        target = mon.stage_threshold
     return min(100, max(0, round(value * 100 / max(1, target))))
 
 
@@ -340,6 +345,7 @@ def apply_usage(state: GameState, delta: int, api: PokeAPIClient) -> list[str]:
             if state.egg_usage < EGG_HATCH_THRESHOLD:
                 break
             hatch = api.hatch(minimum_rarity=state.egg_tier, shiny_charm=state.shiny_charm_active)
+            has_growth_boost = any(catch.base_id == hatch.base_id for catch in state.catches)
             state.mon = MonState(
                 base_id=hatch.base_id,
                 path_ids=hatch.path_ids,
@@ -348,6 +354,7 @@ def apply_usage(state: GameState, delta: int, api: PokeAPIClient) -> list[str]:
                 rarity=hatch.rarity,
                 is_shiny=hatch.is_shiny,
                 nature=hatch.nature,
+                has_growth_boost=has_growth_boost,
             )
             state.egg_usage = 0
             state.egg_tier = None
@@ -364,7 +371,7 @@ def apply_usage(state: GameState, delta: int, api: PokeAPIClient) -> list[str]:
             continue
 
         mon = state.mon
-        threshold = phase_threshold(mon.rarity, len(mon.path_ids), mon.stage_index)
+        threshold = mon.stage_threshold
         need = max(0, threshold - mon.used_at_stage)
         take = min(remaining, need)
         mon.used_at_stage += take

@@ -727,6 +727,18 @@ def _period_starts(now: datetime) -> tuple[datetime, datetime, datetime, datetim
     return today, week, month, block
 
 
+def month_daily_series(entries: list[UsageEntry], now: datetime) -> list[int]:
+    """Return one total per local calendar day, from the first through today."""
+    today = now.astimezone().date()
+    first = today.replace(day=1)
+    totals = [0] * today.day
+    for entry in entries:
+        day = entry.date.astimezone().date()
+        if first <= day <= today:
+            totals[day.day - 1] += entry.total_tokens
+    return totals
+
+
 def scan_all(now: datetime | None = None) -> tuple[UsageSnapshot, dict[str, str]]:
     now = now or _now_local()
     today, week, month, block = _period_starts(now)
@@ -745,8 +757,10 @@ def scan_all(now: datetime | None = None) -> tuple[UsageSnapshot, dict[str, str]
                 errors["cursor"] = last_scan_warning
         if not entries:
             continue
-        usage = ProviderUsage(provider=provider, entry_count=len(entries))
+        usage = ProviderUsage(provider=provider, entry_count=len(entries), month_daily=month_daily_series(entries, now))
         for entry in entries:
+            if entry.date.astimezone().date() > today.date():
+                continue
             if entry.date >= month:
                 usage.month_tokens += entry.total_tokens
             if entry.date >= week:
