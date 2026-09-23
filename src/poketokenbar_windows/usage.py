@@ -815,7 +815,7 @@ def scan_all(now: datetime | None = None) -> tuple[UsageSnapshot, dict[str, str]
         if provider == "cursor" and not entries:
             from .cursor import last_scan_warning
 
-            if last_scan_warning:
+            if last_scan_warning and last_scan_warning not in {"no session token", "disabled"}:
                 errors["cursor"] = last_scan_warning
         if not entries:
             continue

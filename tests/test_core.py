@@ -851,6 +851,23 @@ class MonthTrendTests(unittest.TestCase):
         self.assertEqual(history["2026-09"][1][2], 0.25)
 
 
+    def test_unused_cursor_does_not_create_a_false_scan_warning(self):
+        now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+        with (
+            patch("poketokenbar_windows.usage.SCANNERS", {"cursor": lambda since: []}),
+            patch("poketokenbar_windows.cursor.last_scan_warning", "no session token"),
+        ):
+            snapshot, errors = scan_all(now)
+        self.assertFalse(snapshot.providers)
+        self.assertFalse(errors)
+        with (
+            patch("poketokenbar_windows.usage.SCANNERS", {"cursor": lambda since: []}),
+            patch("poketokenbar_windows.cursor.last_scan_warning", "network error"),
+        ):
+            _, errors = scan_all(now)
+        self.assertEqual(errors, {"cursor": "network error"})
+
+
 class RepeatGrowthTests(unittest.TestCase):
     def test_repeat_base_species_gets_persistent_half_threshold(self):
         state = GameState(catches=[CatchRecord(3, 1, [1, 2, 3], "common", False, "Hardy", "2026-09-01")])
