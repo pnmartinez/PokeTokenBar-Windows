@@ -171,7 +171,7 @@ class UITests(unittest.TestCase):
         self.addCleanup(window.deleteLater)
         self.addCleanup(window.hide)
         snapshot = UsageSnapshot(
-            providers={"codex": ProviderUsage("codex", today_tokens=7, month_tokens=12, month_daily=[5, 0, 7])},
+            providers={"codex": ProviderUsage("codex", today_tokens=7, week_tokens=9, month_tokens=12, today_cost=0.3, week_cost=0.5, month_cost=0.7, month_daily=[5, 0, 7])},
             scanned_at=datetime(2026, 9, 3, 12, tzinfo=timezone.utc),
         )
         window.render(RefreshResult(snapshot, {}, {}, state, [], None, "Bulbasaur"))
@@ -185,6 +185,9 @@ class UITests(unittest.TestCase):
         self.assertTrue(trend.isVisible())
         self.assertGreater(trend.height(), 160)
         self.assertTrue(badge.isVisible())
+        self.assertEqual(window.view_model.monthTokens, "12")
+        self.assertEqual(window.view_model.weekCost, "$0.50")
+        self.assertEqual(window.view_model.monthCost, "$0.70")
         self.assertEqual(window.view_model.monthTrend[1]["tokens"], 0)
         self.assertIn("7 tokens", window.view_model.monthTrend[2]["caption"])
         self.assertIn("3 set.", window.view_model.monthTrend[2]["caption"])

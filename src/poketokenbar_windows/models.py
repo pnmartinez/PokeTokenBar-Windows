@@ -34,6 +34,8 @@ class ProviderUsage:
     month_tokens: int = 0
     block_tokens: int = 0
     today_cost: float = 0.0
+    week_cost: float = 0.0
+    month_cost: float = 0.0
     entry_count: int = 0
     month_daily: list[int] = field(default_factory=list)
     month_daily_cost: list[float] = field(default_factory=list)
@@ -63,6 +65,14 @@ class UsageSnapshot:
     @property
     def today_cost(self) -> float:
         return sum(v.today_cost for v in self.providers.values())
+
+    @property
+    def week_cost(self) -> float:
+        return sum(v.week_cost for v in self.providers.values())
+
+    @property
+    def month_cost(self) -> float:
+        return sum(v.month_cost for v in self.providers.values())
 
     @property
     def month_daily(self) -> list[int]:

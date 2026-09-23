@@ -828,14 +828,17 @@ def scan_all(now: datetime | None = None) -> tuple[UsageSnapshot, dict[str, str]
             local_day = entry.date.astimezone().date()
             if local_day > today.date():
                 continue
+            entry_cost = _entry_cost(entry)
             if local_day >= month.date():
                 usage.month_tokens += entry.total_tokens
+                usage.month_cost += entry_cost
             if local_day >= week.date():
                 usage.week_tokens += entry.total_tokens
+                usage.week_cost += entry_cost
             if entry.date >= block:
                 usage.block_tokens += entry.total_tokens
             if local_day >= today.date():
                 usage.today_tokens += entry.total_tokens
-                usage.today_cost += _entry_cost(entry)
+                usage.today_cost += entry_cost
         providers[provider] = usage
     return UsageSnapshot(providers=providers, scanned_at=now), errors

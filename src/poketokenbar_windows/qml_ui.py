@@ -190,8 +190,12 @@ class QmlViewModel(QObject):
             "companionEvolutionText": translated_text(language, "hatch_hint"),
             "spriteUrl": "",
             "todayTokens": "—",
+            "todayTokensExact": "—",
             "todayCost": "—",
             "weekTokens": "—",
+            "weekCost": "—",
+            "monthTokens": "—",
+            "monthCost": "—",
             "wallet": compact_tokens(state.wallet),
             "providers": [],
             "monthTrend": [],
@@ -320,12 +324,18 @@ class QmlViewModel(QObject):
     todayTokens = Property(
         str, lambda self: self._values["todayTokens"], notify=dataChanged
     )
+    todayTokensExact = Property(
+        str, lambda self: self._values["todayTokensExact"], notify=dataChanged
+    )
     todayCost = Property(
         str, lambda self: self._values["todayCost"], notify=dataChanged
     )
     weekTokens = Property(
         str, lambda self: self._values["weekTokens"], notify=dataChanged
     )
+    weekCost = Property(str, lambda self: self._values["weekCost"], notify=dataChanged)
+    monthTokens = Property(str, lambda self: self._values["monthTokens"], notify=dataChanged)
+    monthCost = Property(str, lambda self: self._values["monthCost"], notify=dataChanged)
     wallet = Property(str, lambda self: self._values["wallet"], notify=dataChanged)
     providers = Property(
         "QVariantList", lambda self: self._values["providers"], notify=dataChanged
@@ -1045,8 +1055,14 @@ class QmlViewModel(QObject):
             refreshEnabled=True,
             statusText=self._tr(status_key) + (f" · {stamp}" if stamp else ""),
             todayTokens=compact_tokens(snapshot.today_tokens),
+            todayTokensExact=QLocale(
+                {"en": "en_US", "es": "es_ES", "gl": "gl_ES"}.get(language, "en_US")
+            ).toString(snapshot.today_tokens),
             todayCost=f"${snapshot.today_cost:,.2f}",
             weekTokens=compact_tokens(snapshot.week_tokens),
+            weekCost=f"${snapshot.week_cost:,.2f}",
+            monthTokens=compact_tokens(snapshot.month_tokens),
+            monthCost=f"${snapshot.month_cost:,.2f}",
             providers=providers,
             limits=limits,
         )

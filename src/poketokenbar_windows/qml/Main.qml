@@ -42,6 +42,7 @@ Rectangle {
     property color panelAltColor: appModel.darkMode ? "#202b3b" : "#edf3ff"
     property color borderColor: appModel.darkMode ? "#2b394e" : "#dce3ed"
     property color accentColor: appModel.darkMode ? "#8facff" : "#315da8"
+    property color trendHoverColor: appModel.darkMode ? "#c2d1ff" : "#6388c7"
     property color accentSurface: appModel.darkMode ? "#263754" : "#dbe7fb"
     property color successColor: appModel.darkMode ? "#75d6a7" : "#237a55"
     property color warningColor: appModel.darkMode ? "#f0bc68" : "#a45b00"
@@ -750,19 +751,6 @@ Rectangle {
         }
     }
 
-    component UsageMetric: Item {
-        required property string label
-        required property string value
-        Layout.fillWidth: true
-        Layout.preferredHeight: 48
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 2
-            Text { text: label; color: root.mutedColor; font.pixelSize: 11 }
-            Text { text: value; color: root.textColor; font.pixelSize: 18; font.weight: Font.DemiBold }
-        }
-    }
-
     component WalletBar: Rectangle {
         implicitHeight: 38
         color: root.panelColor
@@ -1111,22 +1099,59 @@ Rectangle {
                         id: usagePanel
                         objectName: "monthTrendPanel"
                         Layout.fillWidth: true
-                        Layout.preferredHeight: appModel.trendMonthLabel !== "" ? 192 : 78
+                        Layout.preferredHeight: appModel.trendMonthLabel !== "" ? 215 : 101
                         Layout.minimumHeight: Layout.preferredHeight
                         Layout.maximumHeight: Layout.preferredHeight
                         ColumnLayout {
                             anchors.fill: parent
                             anchors.margins: 12
                             spacing: 4
+                            Text {
+                                text: appModel.strings.tokens_today
+                                color: root.mutedColor
+                                font.pixelSize: 12
+                            }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 48
-                                spacing: 10
-                                UsageMetric { label: appModel.strings.tokens_today; value: appModel.todayTokens }
-                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 34; color: root.borderColor }
-                                UsageMetric { label: appModel.strings.this_week; value: appModel.weekTokens }
-                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 34; color: root.borderColor }
-                                UsageMetric { label: appModel.strings.estimated_cost; value: appModel.todayCost }
+                                Layout.preferredHeight: 33
+                                spacing: 8
+                                Text {
+                                    text: appModel.todayTokens
+                                    color: root.textColor
+                                    font.pixelSize: 28
+                                    font.weight: Font.Bold
+                                }
+                                Text {
+                                    text: appModel.todayTokensExact
+                                    color: root.mutedColor
+                                    font.pixelSize: 11
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    text: appModel.todayCost
+                                    color: root.mutedColor
+                                    font.pixelSize: 15
+                                    font.weight: Font.Medium
+                                }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 23
+                                spacing: 18
+                                RowLayout {
+                                    spacing: 5
+                                    Text { text: appModel.strings.this_week; color: root.mutedColor; font.pixelSize: 11 }
+                                    Text { text: appModel.weekTokens; color: root.textColor; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                    Text { text: appModel.weekCost; color: root.mutedColor; font.pixelSize: 11 }
+                                }
+                                RowLayout {
+                                    spacing: 5
+                                    Text { text: appModel.strings.this_month; color: root.mutedColor; font.pixelSize: 11 }
+                                    Text { text: appModel.monthTokens; color: root.textColor; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                    Text { text: appModel.monthCost; color: root.mutedColor; font.pixelSize: 11 }
+                                }
+                                Item { Layout.fillWidth: true }
                             }
                             Rectangle {
                                 visible: appModel.trendMonthLabel !== ""
@@ -1198,9 +1223,7 @@ Rectangle {
                                         delegate: Item {
                                             required property var modelData
                                             required property int index
-                                            property bool selectedDay: root.trendHoveredIndex >= 0
-                                                ? root.trendHoveredIndex === index
-                                                : index === appModel.monthTrend.length - 1
+                                            property bool hoveredDay: root.trendHoveredIndex === index
                                             width: Math.max(2, (trendBars.width - Math.max(0, appModel.monthTrend.length - 1) * trendBars.spacing) / Math.max(1, appModel.monthTrend.length))
                                             height: trendBars.height
                                             Rectangle {
@@ -1211,12 +1234,10 @@ Rectangle {
                                                 width: Math.max(2, parent.width - 2)
                                                 height: modelData.barHeight
                                                 radius: 2
-                                                color: modelData.today ? root.accentColor
-                                                    : (parent.selectedDay ? root.warningColor
+                                                color: parent.hoveredDay ? root.trendHoverColor
+                                                    : (modelData.today ? root.accentColor
                                                         : (root.darkMode ? "#71839f" : "#8193af"))
-                                                border.color: parent.selectedDay && modelData.today ? root.warningColor : "transparent"
-                                                border.width: parent.selectedDay && modelData.today ? 2 : 0
-                                                opacity: modelData.empty && !parent.selectedDay ? 0.25 : 0.95
+                                                opacity: modelData.empty && !parent.hoveredDay ? 0.25 : 0.95
                                             }
                                             Rectangle {
                                                 visible: modelData.weekend

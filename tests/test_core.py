@@ -820,6 +820,23 @@ class FormattingTests(unittest.TestCase):
 
 
 class MonthTrendTests(unittest.TestCase):
+    def test_period_costs_follow_the_same_boundaries_as_tokens(self):
+        now = datetime(2026, 9, 10, 12, tzinfo=timezone.utc)
+        entries = [
+            UsageEntry("prior-month", datetime(2026, 8, 31, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=3, explicit_cost=0.05),
+            UsageEntry("prior-week", datetime(2026, 9, 1, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=5, explicit_cost=0.10),
+            UsageEntry("this-week", datetime(2026, 9, 8, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=7, explicit_cost=0.20),
+            UsageEntry("today", now, "codex", "gpt", input_tokens=11, explicit_cost=0.30),
+            UsageEntry("future", datetime(2026, 9, 11, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=13, explicit_cost=0.40),
+        ]
+        with patch("poketokenbar_windows.usage.SCANNERS", {"codex": lambda since: entries}):
+            snapshot, errors = scan_all(now)
+        self.assertFalse(errors)
+        self.assertEqual((snapshot.today_tokens, snapshot.week_tokens, snapshot.month_tokens), (11, 18, 23))
+        self.assertAlmostEqual(snapshot.today_cost, 0.30)
+        self.assertAlmostEqual(snapshot.week_cost, 0.50)
+        self.assertAlmostEqual(snapshot.month_cost, 0.60)
+
     def test_current_month_has_dense_local_days_and_matches_period_total(self):
         now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
         entries = [
