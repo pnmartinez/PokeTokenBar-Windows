@@ -520,6 +520,9 @@ class UITests(unittest.TestCase):
         self.assertIn("{amount}", model.strings["bag_candy_description"])
         self.assertTrue(model.limitResetNotifications)
         self.assertTrue(model.bankedResetNotifications)
+        self.assertEqual(model.strings["limit_reset_notifications"], "Reinicio dos límites esgotados")
+        self.assertEqual(model.strings["banked_reset_notifications"], "Novos reinicios dispoñibles engadidos")
+        self.assertEqual(model.strings["banked_reset_granted_title"], "Novo reinicio dispoñible")
 
         model.setPreference("limitResetNotifications", False)
         model.setPreference("bankedResetNotifications", False)
