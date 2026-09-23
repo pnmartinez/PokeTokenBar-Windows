@@ -8,7 +8,7 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .backups import AUTO_NAME, atomic_write, backup_path
 from .formatting import (
     DEFAULT_FORECAST_ENABLED,
     DEFAULT_LIMIT_DISPLAY_MODE,
@@ -1259,12 +1260,12 @@ class MainWindow(QMainWindow):
         advanced.setCheckable(True)
         advanced.setChecked(False)
         advanced_layout = QVBoxLayout(advanced)
-        data_hint = QLabel("Export a backup or replace the current save from a JSON backup.")
+        data_hint = QLabel(translated_text(self.state.language, "backup_help"))
         data_hint.setWordWrap(True)
         advanced_layout.addWidget(data_hint)
         data_actions = QHBoxLayout()
-        export_button = QPushButton("Export save…")
-        import_button = QPushButton("Import save…")
+        export_button = QPushButton(translated_text(self.state.language, "export_backup"))
+        import_button = QPushButton(translated_text(self.state.language, "import_backup"))
         export_button.clicked.connect(self.export_requested.emit)
         import_button.clicked.connect(self.import_requested.emit)
         data_actions.addWidget(export_button)
@@ -1984,6 +1985,7 @@ class TrayController(QObject):
         self.settings = application_settings()
         self.store = StateStore()
         self.state = self.store.load()
+        self.store.ensure_daily_on_open()
         self.api = PokeAPIClient(_data_cache_dir())
         self.state_lock = threading.Lock()
         self.bridge = Bridge()
@@ -1998,6 +2000,7 @@ class TrayController(QObject):
         self.qa_capture_scheduled = False
         self.limit_alert_tiers: dict[str, int] = {}
         self.limit_change_observations: dict[str, float | int] = {}
+        self._backup_error_shown: str | None = None
         self.limit_notifications_enabled = settings_bool(
             self.settings.value(LIMIT_NOTIFICATIONS_KEY, DEFAULT_LIMIT_NOTIFICATIONS),
             DEFAULT_LIMIT_NOTIFICATIONS,
@@ -2340,49 +2343,69 @@ class TrayController(QObject):
         self.refresh()
 
     def _export_state(self) -> None:
+        language = self.state.language
+        suggested = backup_path(self.store.path, "manual")
         filename, _ = QFileDialog.getSaveFileName(
-            self.window, "Export PokeTokenBar save", "poketokenbar-save.json", "JSON files (*.json)"
+            self.window,
+            translated_text(language, "export_backup"),
+            str(suggested),
+            "JSON files (*.json)",
         )
         if not filename:
             return
+        target = Path(filename)
+        reserved = {self.store.path.name, "state-recovery.json", "state-backup.json"}
+        if target.parent.resolve() == self.store.path.parent.resolve() and (
+            target.name in reserved or AUTO_NAME.fullmatch(target.name)
+        ):
+            QMessageBox.warning(
+                self.window,
+                translated_text(language, "export_backup"),
+                translated_text(language, "backup_reserved_name"),
+            )
+            return
         try:
-            self.store.save(self.state)
-            Path(filename).write_text(self.store.path.read_text(encoding="utf-8"), encoding="utf-8")
-            self.window.statusBar().showMessage("Save exported", 5000)
-        except OSError:
-            QMessageBox.warning(self.window, "Export save", "The selected file could not be written.")
+            with self.state_lock:
+                serialized = self.store.serialize_state(self.state)
+            atomic_write(target, serialized)
+            self.window.statusBar().showMessage(translated_text(language, "backup_exported"), 5000)
+        except (OSError, ValueError):
+            QMessageBox.warning(
+                self.window,
+                translated_text(language, "export_backup"),
+                translated_text(language, "backup_write_error"),
+            )
 
     def _import_state(self) -> None:
+        language = self.state.language
         filename, _ = QFileDialog.getOpenFileName(
-            self.window, "Import PokeTokenBar save", "", "JSON files (*.json)"
+            self.window,
+            translated_text(language, "import_backup"),
+            str(self.store.path.parent),
+            "JSON files (*.json)",
         )
         if not filename:
             return
         try:
             raw = json.loads(Path(filename).read_text(encoding="utf-8"))
-            if not isinstance(raw, dict) or not any(key in raw for key in ("catches", "mon", "egg_usage")):
-                raise ValueError
-            if not isinstance(raw.get("catches", []), list):
-                raise TypeError
-            if raw.get("mon") is not None and not isinstance(raw.get("mon"), dict):
-                raise TypeError
-            if not isinstance(raw.get("inventory", {}), dict):
-                raise TypeError
-            backup = self.store.path.with_name(
-                f"state-before-import-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}.json"
-            )
-            if self.store.path.exists():
-                backup.write_text(self.store.path.read_text(encoding="utf-8"), encoding="utf-8")
-            imported_path = self.store.path.with_suffix(".import.tmp")
-            imported_path.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
-            imported_path.replace(self.store.path)
-            imported = self.store.load()
-            self.state = imported
+            with self.state_lock:
+                imported = self.store.import_payload(raw)
+                self.state = imported
             self.window.set_state(imported)
             self.refresh()
-            self.window.statusBar().showMessage("Save imported; previous save backed up", 7000)
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            QMessageBox.warning(self.window, "Import save", "This is not a valid PokeTokenBar save file.")
+            self.window.statusBar().showMessage(translated_text(imported.language, "backup_imported"), 7000)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            QMessageBox.warning(
+                self.window,
+                translated_text(language, "import_backup"),
+                translated_text(language, "backup_invalid"),
+            )
+        except OSError:
+            QMessageBox.warning(
+                self.window,
+                translated_text(language, "import_backup"),
+                translated_text(language, "backup_import_error"),
+            )
 
     def show_window(self) -> None:
         if self.last_result is None:
@@ -2516,6 +2539,23 @@ class TrayController(QObject):
         changes, self.limit_change_observations = evaluate_limit_changes(
             result.limits, self.limit_change_observations
         )
+        if any(change.kind == "depleted" for change in changes):
+            try:
+                self.store.backup_limit_event(result.state)
+            except (OSError, ValueError) as exc:
+                self.store.last_backup_error = str(exc)
+            else:
+                self.store.last_backup_error = None
+        if self.store.last_backup_error and self.store.last_backup_error != self._backup_error_shown:
+            self.tray.showMessage(
+                translated_text(self.state.language, "backup_failed_title"),
+                translated_text(self.state.language, "backup_failed_body"),
+                QSystemTrayIcon.MessageIcon.Warning,
+                8_000,
+            )
+            self._backup_error_shown = self.store.last_backup_error
+        elif self.store.last_backup_error is None:
+            self._backup_error_shown = None
         for change in changes:
             provider = PROVIDER_LABELS.get(change.provider, change.provider.title())
             if change.kind == "recovered" and self.limit_reset_notifications_enabled:
@@ -2718,7 +2758,8 @@ class TrayController(QObject):
     def quit(self) -> None:
         if isinstance(self.window, QmlMainWindow):
             self.window.save_window_geometry()
-        self.store.save(self.state)
+        # Every state mutation and refresh is already persisted. Saving again here
+        # could overwrite newer data if another instance wrote after the last refresh.
         self.floating_pet.shutdown()
         self.tray.hide()
         self.executor.shutdown(wait=False, cancel_futures=True)

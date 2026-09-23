@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
-import time
-from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
+from .backups import atomic_write, ensure_daily_backup, save_lock, write_backup
 from .pokemon import (
     EGG_HATCH_THRESHOLD,
     MINT_PRICE,
@@ -212,61 +209,24 @@ def companion_progress_percent(state: GameState) -> int:
     return min(100, max(0, round(value * 100 / max(1, target))))
 
 
-@contextmanager
-def _save_lock(path: Path):
-    # Coordinate current releases across processes. Older releases ignore this lock,
-    # but the distinct temporary names below still prevent their temp-file collision.
-    lock_path = path.with_name(f".{path.name}.lock")
-    with lock_path.open("a+b") as lock:
-        if os.name == "nt":
-            import msvcrt
-
-            for attempt in range(400):
-                try:
-                    lock.seek(0)
-                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
-                    break
-                except OSError:
-                    if attempt == 399:
-                        raise
-                    time.sleep(0.025)
-            try:
-                yield
-            finally:
-                lock.seek(0)
-                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-
-
-def _atomic_write(path: Path, contents: str) -> None:
-    # Distinct instances must never write through the same temporary filename.
-    tmp = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-    try:
-        tmp.write_text(contents, encoding="utf-8")
-        tmp.replace(path)
-    finally:
-        tmp.unlink(missing_ok=True)
-
-
 class StateStore:
     def __init__(self, path: Path | None = None):
         self.path = path or state_dir() / "state.json"
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.last_backup_error: str | None = None
+        self.load_error: str | None = None
 
-    def load(self) -> GameState:
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return GameState()
-        if not isinstance(raw, dict):
-            return GameState()
+    @staticmethod
+    def parse_state(raw: dict[str, Any]) -> GameState:
+        if (
+            not isinstance(raw, dict)
+            or not any(key in raw for key in ("catches", "mon", "egg_usage"))
+            or not isinstance(raw.get("catches", []), list)
+            or any(not isinstance(item, dict) for item in raw.get("catches", []))
+            or (raw.get("mon") is not None and not isinstance(raw.get("mon"), dict))
+            or not isinstance(raw.get("inventory", {}), dict)
+        ):
+            raise ValueError("Invalid PokeTokenBar save")
         try:
             mon_raw = raw.get("mon")
             mon_fields = dict(mon_raw) if isinstance(mon_raw, dict) else None
@@ -314,18 +274,48 @@ class StateStore:
                 state.inventory.setdefault(key, 0)
             normalize_representative(state)
             return state
-        except (TypeError, ValueError, AttributeError):
-            return GameState()
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("Invalid PokeTokenBar save") from exc
 
-    def save(self, state: GameState) -> None:
+    @staticmethod
+    def serialize_state(state: GameState) -> str:
         payload = asdict(state)
         if payload["mon"] is not None:
             # Older releases reject unknown fields inside "mon" and load a new game.
             # They safely ignore unknown fields at the top level.
             payload["active_has_growth_boost"] = payload["mon"].pop("has_growth_boost")
-        serialized = json.dumps(payload, indent=2, ensure_ascii=False)
+        return json.dumps(payload, indent=2, ensure_ascii=False)
 
-        with _save_lock(self.path):
+    def load(self) -> GameState:
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            state = self.parse_state(raw)
+        except FileNotFoundError:
+            self.load_error = None
+            return GameState()
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            self.load_error = f"{type(exc).__name__}: {exc}"
+            return GameState()
+        self.load_error = None
+        return state
+
+    def ensure_daily_on_open(self) -> None:
+        if self.load_error is not None or not self.path.exists():
+            return
+        with save_lock(self.path):
+            try:
+                ensure_daily_backup(self.path, self.path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                self.last_backup_error = str(exc)
+            else:
+                self.last_backup_error = None
+
+    def save(self, state: GameState) -> None:
+        if self.load_error is not None:
+            raise ValueError(f"Refusing to overwrite unreadable save: {self.load_error}")
+        serialized = self.serialize_state(state)
+        payload = json.loads(serialized)
+        with save_lock(self.path):
             recovery = self.path.with_name("state-recovery.json")
             try:
                 previous = json.loads(recovery.read_text(encoding="utf-8"))
@@ -340,9 +330,36 @@ class StateStore:
                 len(payload["catches"]) >= len(previous["catches"])
                 and payload["used_since_install"] >= previous["used_since_install"]
             ):
-                _atomic_write(recovery, serialized)
+                atomic_write(recovery, serialized)
 
-            _atomic_write(self.path, serialized)
+            atomic_write(self.path, serialized)
+            try:
+                ensure_daily_backup(self.path, serialized)
+            except (OSError, ValueError) as exc:
+                self.last_backup_error = str(exc)
+            else:
+                self.last_backup_error = None
+
+    def backup_limit_event(self, state: GameState) -> Path:
+        serialized = self.serialize_state(state)
+        with save_lock(self.path):
+            return write_backup(self.path, "limit", serialized)
+
+    def import_payload(self, raw: dict[str, Any]) -> GameState:
+        imported = self.parse_state(raw)
+        serialized = json.dumps(raw, indent=2, ensure_ascii=False)
+        with save_lock(self.path):
+            if self.path.exists():
+                previous = self.path.read_text(encoding="utf-8")
+                try:
+                    write_backup(self.path, "before-import", previous)
+                except ValueError:
+                    # The invalid original is still preserved by write_backup.
+                    pass
+            write_backup(self.path, "imported", serialized)
+            atomic_write(self.path, serialized)
+        self.load_error = None
+        return imported
 
 
 def usage_delta(

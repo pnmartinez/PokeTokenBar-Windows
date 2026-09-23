@@ -134,6 +134,8 @@ def evaluate_limit_changes(
             identity = window.identifier or f"{index}|{window.label.lower()}"
             key = f"used|{provider}|{identity}"
             previous = updated.get(key)
+            if previous is not None and float(previous) < 99.5 and used >= 99.5:
+                changes.append(LimitChange("depleted", provider, window.label))
             if previous is not None and float(previous) >= 99.5 and used <= 0.5:
                 changes.append(LimitChange("recovered", provider, window.label))
             updated[key] = used

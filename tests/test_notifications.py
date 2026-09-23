@@ -125,6 +125,16 @@ class LimitChangeTests(unittest.TestCase):
         changes, _ = evaluate_limit_changes(next_reading, observations)
         self.assertEqual(changes, [])
 
+    def test_depletion_is_reported_once_after_a_previous_reading(self):
+        changes, observations = evaluate_limit_changes(_limits(("5-hour", 100)))
+        self.assertEqual(changes, [])
+        changes, observations = evaluate_limit_changes(_limits(("5-hour", 0)), observations)
+        self.assertEqual([change.kind for change in changes], ["recovered"])
+        changes, observations = evaluate_limit_changes(_limits(("5-hour", 100)), observations)
+        self.assertEqual([change.kind for change in changes], ["depleted"])
+        changes, _ = evaluate_limit_changes(_limits(("5-hour", 100)), observations)
+        self.assertEqual(changes, [])
+
     def test_partial_usage_and_partial_recovery_do_not_notify(self):
         _, observations = evaluate_limit_changes(_limits(("Weekly", 99)))
         changes, observations = evaluate_limit_changes(_limits(("Weekly", 0)), observations)

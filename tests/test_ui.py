@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import threading
@@ -30,7 +31,7 @@ from poketokenbar_windows.floating_pet import (
     HoverCallout,
 )
 from poketokenbar_windows.qml_ui import QmlMainWindow, QmlViewModel
-from poketokenbar_windows.state import CatchRecord, GameState, MonState
+from poketokenbar_windows.state import CatchRecord, GameState, MonState, StateStore
 from poketokenbar_windows.ui import (
     DesktopPet,
     MainWindow,
@@ -727,6 +728,69 @@ class UITests(unittest.TestCase):
         self.assertTrue(controller.window_open_pending)
         controller.window.show.assert_not_called()
         self.assertIn("Loading", controller.tray.setToolTip.call_args.args[0])
+
+    def test_limit_reaching_full_usage_creates_one_event_backup(self):
+        controller = TrayController.__new__(TrayController)
+        controller.window = Mock()
+        controller.tray = Mock()
+        controller.store = Mock()
+        controller.store.last_backup_error = None
+        controller.state = GameState()
+        controller.window_open_pending = False
+        controller.refresh_pending = False
+        controller.limit_alert_tiers = {}
+        controller.limit_change_observations = {}
+        controller.warning_threshold = 80
+        controller.critical_threshold = 95
+        controller.limit_notifications_enabled = False
+        controller.limit_reset_notifications_enabled = False
+        controller.banked_reset_notifications_enabled = False
+        controller.companion_notifications_enabled = False
+        controller._backup_error_shown = None
+        controller._update_companion_surfaces = Mock()
+        controller._schedule_qa_capture = Mock()
+
+        def refresh(used):
+            result = RefreshResult(
+                UsageSnapshot(),
+                {"codex": ProviderLimits("codex", windows=[LimitWindow("5-hour", used)])},
+                {}, controller.state, [], None, "Pokemon Egg",
+            )
+            controller._on_refreshed(result)
+
+        refresh(50)
+        controller.store.backup_limit_event.assert_not_called()
+        refresh(100)
+        controller.store.backup_limit_event.assert_called_once_with(controller.state)
+        refresh(100)
+        controller.store.backup_limit_event.assert_called_once()
+
+    def test_export_backup_suggests_timestamped_file_and_preserves_active_state(self):
+        state_path = Path(self.tmp.name) / "state.json"
+        controller = TrayController.__new__(TrayController)
+        controller.store = StateStore(state_path)
+        controller.state = GameState(egg_usage=123, language="gl")
+        controller.state_lock = threading.Lock()
+        controller.window = Mock()
+
+        def use_suggestion(_window, title, suggested, _filter):
+            self.assertEqual(title, "Exportar Backup")
+            self.assertEqual(Path(suggested).parent, state_path.parent)
+            self.assertRegex(Path(suggested).name, r"^state-backup-manual-\d{8}-")
+            return suggested, ""
+
+        with patch("poketokenbar_windows.ui.QFileDialog.getSaveFileName", side_effect=use_suggestion):
+            controller._export_state()
+        exports = list(state_path.parent.glob("state-backup-manual-*.json"))
+        self.assertEqual(len(exports), 1)
+        self.assertEqual(json.loads(exports[0].read_text(encoding="utf-8"))["egg_usage"], 123)
+        self.assertFalse(state_path.exists())
+
+        with patch("poketokenbar_windows.ui.QFileDialog.getSaveFileName", return_value=(str(state_path), "")):
+            with patch("poketokenbar_windows.ui.QMessageBox.warning") as warning:
+                controller._export_state()
+        warning.assert_called_once()
+        self.assertFalse(state_path.exists())
 
     def test_companion_reveal_finishes_on_the_real_sprite(self):
         window = self._window()

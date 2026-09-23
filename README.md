@@ -50,7 +50,7 @@ GitHub Actions builds a Windows artifact containing `PokeTokenBar-Windows.exe`. 
 
 The Start automatically with Windows setting registers a tray-only launch: the main window stays closed until opened from the tray or desktop pet. The floating pet follows its saved visibility setting. An interactive EXE launch opens the main window. An existing startup registration is upgraded to tray-only mode only when it points to that same executable.
 
-Quit an existing instance from its tray menu before launching another build. Builds use the same save and settings by default and do not coordinate concurrent writes. Set `PTB_STATE_DIR` to a separate folder to test another instance with an isolated save and settings.
+Quit an existing instance from its tray menu before launching another build. Builds share the same save and settings by default. Current builds coordinate file writes, but a second instance can still hold an older in-memory state, and older builds do not use the lock. Set `PTB_STATE_DIR` to a separate folder to test another build with isolated save and settings.
 
 ### From source
 
@@ -78,6 +78,26 @@ Build the standalone Windows directory with PyInstaller:
 ```
 
 The result is `dist\PokeTokenBar-Windows\PokeTokenBar-Windows.exe`.
+
+## Save backups
+
+The active save is `%APPDATA%\PokeTokenBar-Windows\state.json` by default. Backups are stored beside it, or in `PTB_STATE_DIR` when that override is set. Files use `state-backup-<kind>-<local timestamp and timezone>-<unique suffix>.json`, with kinds `daily`, `limit`, `manual`, `before-import`, and `imported`.
+
+On the first use each local day, the app saves a `daily` backup. Opening an existing save creates it before the first refresh; a new save gets one at its first successful save. A limit that changes from below full usage to full usage during refresh creates a `limit` backup. The first observed reading is a baseline, so launch alone does not invent an event.
+
+Automatic `daily` and `limit` files are pruned after each new automatic backup: all from the last 48 hours; the latest per day through day 7; the latest per ISO week through day 35; then the latest per calendar month through the last 12 months. Older automatic files are removed. Only recognized, valid automatic backups are eligible. `manual`, `before-import`, and `imported` backups, plus legacy or unrecognized files, are never pruned automatically.
+
+Settings offer **Export Backup** and **Import Backup** (both **Exportar Backup** and **Importar Backup** in Galician and Spanish). Export opens the save folder and suggests a timestamped `manual` filename. Import opens that folder and preserves both the previous save and imported payload as timestamped backups before replacing `state.json`. If the current save cannot be parsed, the app refuses to overwrite it with an empty game.
+
+To check the workflow without touching your usual progress, quit any other test build and launch from the repository with an isolated directory:
+
+```powershell
+$env:PTB_STATE_DIR = Join-Path $env:TEMP "PokeTokenBar-backup-test"
+$env:PYTHONPATH = "src"
+.\.venv\Scripts\python.exe -m poketokenbar_windows
+```
+
+After the first refresh, inspect `$env:PTB_STATE_DIR` for `state.json` and one `state-backup-daily-*.json`. Export a backup and check the suggested folder and `state-backup-manual-*.json` name. Import that exported file to see `before-import` and `imported` backups. The retention tests simulate passing days without changing the computer clock: `python -m unittest discover -s tests -v`.
 
 ## Local data sources
 
