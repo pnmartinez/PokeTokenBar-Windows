@@ -87,7 +87,7 @@ On the first use each local day, the app saves a `daily` backup. Opening an exis
 
 Automatic `daily` and `limit` files are pruned after each new automatic backup: all from the last 48 hours; the latest per day through day 7; the latest per ISO week through day 35; then the latest per calendar month through the last 12 months. Older automatic files are removed. Only recognized, valid automatic backups are eligible. `manual`, `before-import`, and `imported` backups, plus legacy or unrecognized files, are never pruned automatically.
 
-Settings offer **Export Backup** and **Import Backup** (both **Exportar Backup** and **Importar Backup** in Galician and Spanish). Export opens the save folder and suggests a timestamped `manual` filename. Import opens that folder and preserves both the previous save and imported payload as timestamped backups before replacing `state.json`. If the current save cannot be parsed, the app refuses to overwrite it with an empty game.
+Settings offer **Export Backup** and **Import Backup** (both **Exportar Backup** and **Importar Backup** in Galician and Spanish). These JSON files contain game progress and inventory; display preferences stored by Windows QSettings are separate. Export opens the save folder and suggests a timestamped `manual` filename. Import opens that folder and preserves both the previous save and imported payload as timestamped backups before replacing `state.json`. If the current save cannot be parsed, the app refuses to overwrite it with an empty game.
 
 To check the workflow without touching your usual progress, quit any other test build and launch from the repository with an isolated directory:
 
