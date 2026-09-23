@@ -1099,7 +1099,7 @@ Rectangle {
                         id: usagePanel
                         objectName: "monthTrendPanel"
                         Layout.fillWidth: true
-                        Layout.preferredHeight: appModel.trendMonthLabel !== "" ? 215 : 101
+                        Layout.preferredHeight: appModel.trendMonthLabel !== "" ? 198 : 101
                         Layout.minimumHeight: Layout.preferredHeight
                         Layout.maximumHeight: Layout.preferredHeight
                         ColumnLayout {
@@ -1110,74 +1110,127 @@ Rectangle {
                                 id: usageMetricRow
                                 objectName: "usageMetricRow"
                                 Layout.fillWidth: true
-                                Layout.preferredWidth: usagePanel.width - 24
-                                Layout.preferredHeight: 57
-                                spacing: 12
-                                ColumnLayout {
-                                    Layout.preferredWidth: (usagePanel.width - 49) / 2
-                                    spacing: 3
-                                    Text { text: appModel.strings.tokens_today; color: root.mutedColor; font.pixelSize: 11 }
-                                    RowLayout {
-                                        spacing: 7
-                                        Text { text: appModel.todayTokens; color: root.textColor; font.pixelSize: 24; font.weight: Font.Bold }
-                                        Text { text: appModel.todayCost; color: root.mutedColor; font.pixelSize: 12 }
+                                Layout.preferredHeight: 55
+                                Layout.minimumHeight: 55
+                                Layout.maximumHeight: 55
+                                spacing: 5
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 0
+                                    Layout.fillHeight: true
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 0
+                                        Item {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 18
+                                            Text {
+                                                text: appModel.strings.tokens_today
+                                                anchors.left: parent.left
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                color: root.mutedColor
+                                                font.pixelSize: 12
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.alignment: Qt.AlignLeft
+                                            Layout.preferredHeight: 24
+                                            spacing: 5
+                                            Text { text: appModel.todayTokens; color: root.textColor; font.pixelSize: 20; font.weight: Font.DemiBold }
+                                            Text { text: appModel.todayCost; color: root.mutedColor; font.pixelSize: 11 }
+                                        }
                                     }
                                 }
-                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 39; color: root.borderColor }
-                                ColumnLayout {
-                                    Layout.preferredWidth: (usagePanel.width - 49) / 2
-                                    spacing: 3
-                                    Text { text: appModel.strings.this_week; color: root.mutedColor; font.pixelSize: 11 }
-                                    RowLayout {
-                                        spacing: 7
-                                        Text { text: appModel.weekTokens; color: root.textColor; font.pixelSize: 20; font.weight: Font.DemiBold }
-                                        Text { text: appModel.weekCost; color: root.mutedColor; font.pixelSize: 12 }
+                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 35; color: root.borderColor }
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 0
+                                    Layout.fillHeight: true
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 0
+                                        Item {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 18
+                                            Text {
+                                                text: appModel.strings.this_week
+                                                anchors.left: parent.left
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                color: root.mutedColor
+                                                font.pixelSize: 12
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.alignment: Qt.AlignLeft
+                                            Layout.preferredHeight: 24
+                                            spacing: 5
+                                            Text { text: appModel.weekTokens; color: root.textColor; font.pixelSize: 20; font.weight: Font.DemiBold }
+                                            Text { text: appModel.weekCost; color: root.mutedColor; font.pixelSize: 11 }
+                                        }
+                                    }
+                                }
+                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 35; color: root.borderColor }
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 0
+                                    Layout.fillHeight: true
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 0
+                                        Item {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 18
+                                            RowLayout {
+                                                anchors.left: parent.left
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 1
+                                                Button {
+                                                    objectName: "trendPreviousMonth"
+                                                    enabled: appModel.trendCanPrevious
+                                                    implicitWidth: 17; implicitHeight: 19
+                                                    Accessible.name: appModel.strings.trend_previous_month
+                                                    text: "‹"
+                                                    font.pixelSize: 17
+                                                    onClicked: { root.trendHoveredIndex = -1; appModel.moveMonth(-1) }
+                                                    background: Rectangle { radius: 4; color: parent.hovered ? root.panelAltColor : "transparent" }
+                                                    contentItem: Text { text: parent.text; color: parent.enabled ? root.accentColor : root.mutedColor; opacity: parent.enabled ? 1 : 0.4; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                                }
+                                                Text { text: appModel.trendMonthLabel; color: root.accentColor; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                                Button {
+                                                    objectName: "trendNextMonth"
+                                                    enabled: appModel.trendCanNext
+                                                    implicitWidth: 17; implicitHeight: 19
+                                                    Accessible.name: appModel.strings.trend_next_month
+                                                    text: "›"
+                                                    font.pixelSize: 17
+                                                    onClicked: { root.trendHoveredIndex = -1; appModel.moveMonth(1) }
+                                                    background: Rectangle { radius: 4; color: parent.hovered ? root.panelAltColor : "transparent" }
+                                                    contentItem: Text { text: parent.text; color: parent.enabled ? root.accentColor : root.mutedColor; opacity: parent.enabled ? 1 : 0.4; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                                }
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.alignment: Qt.AlignLeft
+                                            Layout.preferredHeight: 24
+                                            spacing: 5
+                                            Text { text: appModel.trendMonthTokens; color: root.textColor; font.pixelSize: 20; font.weight: Font.DemiBold }
+                                            Text { text: appModel.trendMonthCost; color: root.mutedColor; font.pixelSize: 11 }
+                                        }
                                     }
                                 }
                             }
-                            Rectangle {
-                                visible: appModel.trendMonthLabel !== ""
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 1
-                                color: root.borderColor
-                            }
+                            Item { visible: appModel.trendMonthLabel !== ""; Layout.preferredHeight: 4 }
                             RowLayout {
                                 visible: appModel.trendMonthLabel !== ""
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 20
                                 Text { text: appModel.strings.month_trend; color: root.textColor; font.pixelSize: 12; font.weight: Font.DemiBold }
-                                Item { Layout.fillWidth: true }
-                                Button {
-                                    objectName: "trendPreviousMonth"
-                                    enabled: appModel.trendCanPrevious
-                                    implicitWidth: 22; implicitHeight: 20
-                                    Accessible.name: appModel.strings.trend_previous_month
-                                    text: "‹"
-                                    font.pixelSize: 18
-                                    onClicked: { root.trendHoveredIndex = -1; appModel.moveMonth(-1) }
-                                    background: Rectangle { radius: 4; color: parent.hovered ? root.panelAltColor : "transparent" }
-                                    contentItem: Text { text: parent.text; color: parent.enabled ? root.textColor : root.mutedColor; opacity: parent.enabled ? 1 : 0.4; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                }
-                                Text { text: appModel.trendMonthLabel; color: root.textColor; font.pixelSize: 11; font.weight: Font.Medium }
-                                Button {
-                                    objectName: "trendNextMonth"
-                                    enabled: appModel.trendCanNext
-                                    implicitWidth: 22; implicitHeight: 20
-                                    Accessible.name: appModel.strings.trend_next_month
-                                    text: "›"
-                                    font.pixelSize: 18
-                                    onClicked: { root.trendHoveredIndex = -1; appModel.moveMonth(1) }
-                                    background: Rectangle { radius: 4; color: parent.hovered ? root.panelAltColor : "transparent" }
-                                    contentItem: Text { text: parent.text; color: parent.enabled ? root.textColor : root.mutedColor; opacity: parent.enabled ? 1 : 0.4; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                }
-                            }
-                            RowLayout {
-                                visible: appModel.trendMonthLabel !== ""
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 19
-                                spacing: 7
-                                Text { text: appModel.trendMonthTokens; color: root.textColor; font.pixelSize: 15; font.weight: Font.DemiBold }
-                                Text { text: appModel.trendMonthCost; color: root.mutedColor; font.pixelSize: 11 }
                                 Item { Layout.fillWidth: true }
                                 Text { text: appModel.trendPeak; color: root.mutedColor; font.pixelSize: 10 }
                             }
