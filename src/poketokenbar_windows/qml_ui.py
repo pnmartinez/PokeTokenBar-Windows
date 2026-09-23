@@ -827,14 +827,14 @@ class QmlViewModel(QObject):
         for index, value in enumerate(tokens):
             day = index + 1
             date_label = QLocale({"en": "en_US", "es": "es_ES", "gl": "gl_ES"}.get(language, "en_US")).toString(
-                QDate(year, month, day), "d MMM"
+                QDate(year, month, day), "ddd d MMM"
             )
             caption = self._tr("trend_day", day=date_label, tokens=compact_tokens(value))
             if index < len(costs) and costs[index] > 0:
                 caption += f" · ${costs[index]:,.2f}"
             rows.append({
                 "day": day, "tokens": value,
-                "barHeight": max(1.5, round(value * 26 / peak)) if peak else 1.5,
+                "barHeight": max(1.5, round(value * 34 / peak)) if peak else 1.5,
                 "label": str(day) if day == 1 or day == today_day or (
                     not is_current and day == days
                 ) or (

@@ -183,10 +183,11 @@ class UITests(unittest.TestCase):
         limits = root.findChild(QObject, "limitsPanel")
         badge = root.findChild(QObject, "growthBoostBadge")
         self.assertTrue(trend.isVisible())
+        self.assertGreater(trend.height(), 160)
         self.assertTrue(badge.isVisible())
         self.assertEqual(window.view_model.monthTrend[1]["tokens"], 0)
         self.assertIn("7 tokens", window.view_model.monthTrend[2]["caption"])
-        self.assertTrue(window.view_model.monthTrend[2]["caption"].startswith("3 "))
+        self.assertIn("3 set.", window.view_model.monthTrend[2]["caption"])
         self.assertLessEqual(trend.mapToItem(home, 0, trend.height()).y(), limits.mapToItem(home, 0, 0).y())
         self.assertLessEqual(limits.mapToItem(home, 0, limits.height()).y(), home.height())
         full_month = UsageSnapshot(
@@ -248,6 +249,7 @@ class UITests(unittest.TestCase):
             'Item {\n                id: homePage',
             qml,
         )
+        self.assertNotIn("appModel.wallet", home_block)
         self.assertIn("id: providersList", home_block)
         self.assertIn("id: limitsContent", home_block)
         self.assertIn(

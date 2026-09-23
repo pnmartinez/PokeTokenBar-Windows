@@ -110,7 +110,6 @@ Rectangle {
                         const kind = useItemPopup.itemKind
                         useItemPopup.close()
                         appModel.useItem(kind)
-                        root.currentPage = 0
                     }
                 }
             }
@@ -751,17 +750,16 @@ Rectangle {
         }
     }
 
-    component MetricCard: Panel {
+    component UsageMetric: Item {
         required property string label
         required property string value
         Layout.fillWidth: true
-        Layout.preferredHeight: 56
+        Layout.preferredHeight: 48
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 9
-            spacing: 1
+            spacing: 2
             Text { text: label; color: root.mutedColor; font.pixelSize: 11 }
-            Text { text: value; color: root.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
+            Text { text: value; color: root.textColor; font.pixelSize: 18; font.weight: Font.DemiBold }
         }
     }
 
@@ -1109,31 +1107,37 @@ Rectangle {
                         }
                     }
 
-                    GridLayout {
-                        Layout.fillWidth: true
-                        columns: width >= 720 ? 4 : 2
-                        columnSpacing: 7
-                        rowSpacing: 7
-                        MetricCard { label: appModel.strings.tokens_today; value: appModel.todayTokens }
-                        MetricCard { label: appModel.strings.estimated_cost; value: appModel.todayCost }
-                        MetricCard { label: appModel.strings.this_week; value: appModel.weekTokens }
-                        MetricCard { label: appModel.strings.wallet; value: appModel.wallet }
-                    }
-
                     Panel {
-                        id: trendPanel
+                        id: usagePanel
                         objectName: "monthTrendPanel"
-                        visible: appModel.trendMonthLabel !== ""
                         Layout.fillWidth: true
-                        Layout.preferredHeight: visible ? 112 : 0
+                        Layout.preferredHeight: appModel.trendMonthLabel !== "" ? 192 : 78
                         Layout.minimumHeight: Layout.preferredHeight
                         Layout.maximumHeight: Layout.preferredHeight
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 9
-                            spacing: 2
+                            anchors.margins: 12
+                            spacing: 4
                             RowLayout {
                                 Layout.fillWidth: true
+                                Layout.preferredHeight: 48
+                                spacing: 10
+                                UsageMetric { label: appModel.strings.tokens_today; value: appModel.todayTokens }
+                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 34; color: root.borderColor }
+                                UsageMetric { label: appModel.strings.this_week; value: appModel.weekTokens }
+                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 34; color: root.borderColor }
+                                UsageMetric { label: appModel.strings.estimated_cost; value: appModel.todayCost }
+                            }
+                            Rectangle {
+                                visible: appModel.trendMonthLabel !== ""
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 1
+                                color: root.borderColor
+                            }
+                            RowLayout {
+                                visible: appModel.trendMonthLabel !== ""
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 20
                                 Text { text: appModel.strings.month_trend; color: root.textColor; font.pixelSize: 12; font.weight: Font.DemiBold }
                                 Item { Layout.fillWidth: true }
                                 Button {
@@ -1161,7 +1165,9 @@ Rectangle {
                                 }
                             }
                             RowLayout {
+                                visible: appModel.trendMonthLabel !== ""
                                 Layout.fillWidth: true
+                                Layout.preferredHeight: 17
                                 Text {
                                     Layout.fillWidth: true
                                     text: appModel.trendLoading ? appModel.strings.trend_loading
@@ -1174,6 +1180,7 @@ Rectangle {
                                 Text { text: appModel.trendPeak; color: root.mutedColor; font.pixelSize: 10 }
                             }
                             Item {
+                                visible: appModel.trendMonthLabel !== ""
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 Rectangle {
@@ -1191,17 +1198,25 @@ Rectangle {
                                         delegate: Item {
                                             required property var modelData
                                             required property int index
+                                            property bool selectedDay: root.trendHoveredIndex >= 0
+                                                ? root.trendHoveredIndex === index
+                                                : index === appModel.monthTrend.length - 1
                                             width: Math.max(2, (trendBars.width - Math.max(0, appModel.monthTrend.length - 1) * trendBars.spacing) / Math.max(1, appModel.monthTrend.length))
                                             height: trendBars.height
                                             Rectangle {
+                                                objectName: "trendDayBar"
                                                 anchors.bottom: parent.bottom
                                                 anchors.bottomMargin: 16
                                                 anchors.horizontalCenter: parent.horizontalCenter
                                                 width: Math.max(2, parent.width - 2)
                                                 height: modelData.barHeight
-                                                radius: 1
-                                                color: modelData.today ? root.accentColor : (root.darkMode ? "#71839f" : "#8193af")
-                                                opacity: modelData.empty ? 0.25 : 0.9
+                                                radius: 2
+                                                color: modelData.today ? root.accentColor
+                                                    : (parent.selectedDay ? root.warningColor
+                                                        : (root.darkMode ? "#71839f" : "#8193af"))
+                                                border.color: parent.selectedDay && modelData.today ? root.warningColor : "transparent"
+                                                border.width: parent.selectedDay && modelData.today ? 2 : 0
+                                                opacity: modelData.empty && !parent.selectedDay ? 0.25 : 0.95
                                             }
                                             Rectangle {
                                                 visible: modelData.weekend
