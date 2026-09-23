@@ -63,7 +63,7 @@ from poketokenbar_windows.state import (
     usage_delta,
     use_item,
 )
-from poketokenbar_windows.usage import month_daily_series, parse_claude_object, parse_codex_object, scan_all
+from poketokenbar_windows.usage import month_daily_series, parse_claude_object, parse_codex_object, scan_all, scan_month_history
 from poketokenbar_windows.windows import (
     APP_NAME,
     REGISTRY_VALUE_NAME,
@@ -834,6 +834,21 @@ class MonthTrendTests(unittest.TestCase):
         self.assertFalse(errors)
         self.assertEqual(snapshot.month_daily, [5, 0, 7, 0])
         self.assertEqual(sum(snapshot.month_daily), snapshot.month_tokens)
+
+
+    def test_history_groups_local_months_and_keeps_costs(self):
+        now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+        entries = [
+            UsageEntry("aug", datetime(2026, 8, 31, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=9, explicit_cost=0.5),
+            UsageEntry("sep", datetime(2026, 9, 3, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=7, explicit_cost=0.25),
+            UsageEntry("future", datetime(2026, 10, 1, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=99),
+        ]
+        with patch("poketokenbar_windows.usage.SCANNERS", {"codex": lambda since: entries}):
+            history = scan_month_history(now)
+        self.assertEqual(set(history), {"2026-08", "2026-09"})
+        self.assertEqual(history["2026-08"][0][30], 9)
+        self.assertEqual(history["2026-09"][0][2], 7)
+        self.assertEqual(history["2026-09"][1][2], 0.25)
 
 
 class RepeatGrowthTests(unittest.TestCase):

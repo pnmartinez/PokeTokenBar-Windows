@@ -745,6 +745,62 @@ def month_daily_series(entries: list[UsageEntry], now: datetime) -> list[int]:
     return totals
 
 
+def _entry_cost(entry: UsageEntry) -> float:
+    if entry.provider == "cursor":
+        return 0.0
+    if entry.explicit_cost is not None and entry.explicit_cost > 0:
+        return entry.explicit_cost
+    return cost_for(
+        entry.model, entry.input_tokens, entry.output_tokens,
+        entry.cache_write_tokens, entry.cache_read_tokens,
+    )
+
+
+def month_daily_cost_series(entries: list[UsageEntry], now: datetime) -> list[float]:
+    today = now.astimezone().date()
+    first = today.replace(day=1)
+    totals = [0.0] * today.day
+    for entry in entries:
+        day = entry.date.astimezone().date()
+        if first <= day <= today:
+            totals[day.day - 1] += _entry_cost(entry)
+    return totals
+
+
+def scan_month_history(now: datetime | None = None) -> dict[str, tuple[list[int], list[float]]]:
+    """Scan local logs once on demand, then group historical usage by local month."""
+    from calendar import monthrange
+    from collections import defaultdict
+
+    now = now or _now_local()
+    since = datetime(2000, 1, 1).astimezone()
+    entries_by_month: dict[str, list[UsageEntry]] = defaultdict(list)
+    for provider, scanner in SCANNERS.items():
+        try:
+            if provider == "cursor":
+                from .cursor import scan_cursor_local
+                entries = scan_cursor_local(since)
+            else:
+                entries = scanner(since)
+        except Exception:  # noqa: BLE001  # one inaccessible provider must not hide other history
+            continue
+        for entry in entries:
+            day = entry.date.astimezone().date()
+            if entry.total_tokens > 0 and day <= now.astimezone().date() and day.year >= 2000:
+                entries_by_month[f"{day.year:04d}-{day.month:02d}"].append(entry)
+    history = {}
+    for key, entries in entries_by_month.items():
+        year, month = map(int, key.split("-"))
+        tokens = [0] * monthrange(year, month)[1]
+        costs = [0.0] * len(tokens)
+        for entry in entries:
+            offset = entry.date.astimezone().day - 1
+            tokens[offset] += entry.total_tokens
+            costs[offset] += _entry_cost(entry)
+        history[key] = (tokens, costs)
+    return history
+
+
 def scan_all(now: datetime | None = None) -> tuple[UsageSnapshot, dict[str, str]]:
     now = now or _now_local()
     today, week, month, block = _period_starts(now)
@@ -766,6 +822,7 @@ def scan_all(now: datetime | None = None) -> tuple[UsageSnapshot, dict[str, str]
         usage = ProviderUsage(
             provider=provider, entry_count=len(entries),
             month_daily=month_daily_series(entries, now),
+            month_daily_cost=month_daily_cost_series(entries, now),
         )
         for entry in entries:
             local_day = entry.date.astimezone().date()
@@ -779,18 +836,6 @@ def scan_all(now: datetime | None = None) -> tuple[UsageSnapshot, dict[str, str]
                 usage.block_tokens += entry.total_tokens
             if local_day >= today.date():
                 usage.today_tokens += entry.total_tokens
-                # Cursor is a subscription plan; don't invent a dollar cost from token rates.
-                if provider == "cursor":
-                    continue
-                if entry.explicit_cost is not None and entry.explicit_cost > 0:
-                    usage.today_cost += entry.explicit_cost
-                else:
-                    usage.today_cost += cost_for(
-                        entry.model,
-                        entry.input_tokens,
-                        entry.output_tokens,
-                        entry.cache_write_tokens,
-                        entry.cache_read_tokens,
-                    )
+                usage.today_cost += _entry_cost(entry)
         providers[provider] = usage
     return UsageSnapshot(providers=providers, scanned_at=now), errors

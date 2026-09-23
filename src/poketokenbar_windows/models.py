@@ -36,6 +36,7 @@ class ProviderUsage:
     today_cost: float = 0.0
     entry_count: int = 0
     month_daily: list[int] = field(default_factory=list)
+    month_daily_cost: list[float] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -68,6 +69,15 @@ class UsageSnapshot:
         days = max((len(value.month_daily) for value in self.providers.values()), default=0)
         return [
             sum(value.month_daily[day] for value in self.providers.values() if day < len(value.month_daily))
+            for day in range(days)
+        ]
+
+
+    @property
+    def month_daily_cost(self) -> list[float]:
+        days = max((len(value.month_daily_cost) for value in self.providers.values()), default=0)
+        return [
+            sum(value.month_daily_cost[day] for value in self.providers.values() if day < len(value.month_daily_cost))
             for day in range(days)
         ]
 
