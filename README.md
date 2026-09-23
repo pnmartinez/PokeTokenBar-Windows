@@ -50,7 +50,7 @@ GitHub Actions builds a Windows artifact containing `PokeTokenBar-Windows.exe`. 
 
 The Start automatically with Windows setting registers a tray-only launch: the main window stays closed until opened from the tray or desktop pet. The floating pet follows its saved visibility setting. An interactive EXE launch opens the main window. An existing startup registration is upgraded to tray-only mode only when it points to that same executable.
 
-Quit an existing instance from its tray menu before launching another build. Builds share the same save and settings by default. Current builds coordinate file writes, but a second instance can still hold an older in-memory state, and older builds do not use the lock. Set `PTB_STATE_DIR` to a separate folder to test another build with isolated save and settings.
+Quit an existing instance from its tray menu before launching another build. Builds share the same save and settings by default. Current builds refuse a second instance using the same save folder. Older builds do not use this guard and can still overwrite the save from stale memory. Set `PTB_STATE_DIR` to a separate folder to test another build with isolated save and settings.
 
 ### From source
 
