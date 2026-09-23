@@ -1106,52 +1106,34 @@ Rectangle {
                             anchors.fill: parent
                             anchors.margins: 12
                             spacing: 4
-                            Text {
-                                text: appModel.strings.tokens_today
-                                color: root.mutedColor
-                                font.pixelSize: 12
-                            }
                             RowLayout {
+                                id: usageMetricRow
+                                objectName: "usageMetricRow"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 33
-                                spacing: 8
-                                Text {
-                                    text: appModel.todayTokens
-                                    color: root.textColor
-                                    font.pixelSize: 28
-                                    font.weight: Font.Bold
+                                Layout.preferredWidth: usagePanel.width - 24
+                                Layout.preferredHeight: 57
+                                spacing: 12
+                                ColumnLayout {
+                                    Layout.preferredWidth: (usagePanel.width - 49) / 2
+                                    spacing: 3
+                                    Text { text: appModel.strings.tokens_today; color: root.mutedColor; font.pixelSize: 11 }
+                                    RowLayout {
+                                        spacing: 7
+                                        Text { text: appModel.todayTokens; color: root.textColor; font.pixelSize: 24; font.weight: Font.Bold }
+                                        Text { text: appModel.todayCost; color: root.mutedColor; font.pixelSize: 12 }
+                                    }
                                 }
-                                Text {
-                                    text: appModel.todayTokensExact
-                                    color: root.mutedColor
-                                    font.pixelSize: 11
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-                                Item { Layout.fillWidth: true }
-                                Text {
-                                    text: appModel.todayCost
-                                    color: root.mutedColor
-                                    font.pixelSize: 15
-                                    font.weight: Font.Medium
-                                }
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 23
-                                spacing: 18
-                                RowLayout {
-                                    spacing: 5
+                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 39; color: root.borderColor }
+                                ColumnLayout {
+                                    Layout.preferredWidth: (usagePanel.width - 49) / 2
+                                    spacing: 3
                                     Text { text: appModel.strings.this_week; color: root.mutedColor; font.pixelSize: 11 }
-                                    Text { text: appModel.weekTokens; color: root.textColor; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                    Text { text: appModel.weekCost; color: root.mutedColor; font.pixelSize: 11 }
+                                    RowLayout {
+                                        spacing: 7
+                                        Text { text: appModel.weekTokens; color: root.textColor; font.pixelSize: 20; font.weight: Font.DemiBold }
+                                        Text { text: appModel.weekCost; color: root.mutedColor; font.pixelSize: 12 }
+                                    }
                                 }
-                                RowLayout {
-                                    spacing: 5
-                                    Text { text: appModel.strings.this_month; color: root.mutedColor; font.pixelSize: 11 }
-                                    Text { text: appModel.monthTokens; color: root.textColor; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                    Text { text: appModel.monthCost; color: root.mutedColor; font.pixelSize: 11 }
-                                }
-                                Item { Layout.fillWidth: true }
                             }
                             Rectangle {
                                 visible: appModel.trendMonthLabel !== ""
@@ -1192,6 +1174,16 @@ Rectangle {
                             RowLayout {
                                 visible: appModel.trendMonthLabel !== ""
                                 Layout.fillWidth: true
+                                Layout.preferredHeight: 19
+                                spacing: 7
+                                Text { text: appModel.trendMonthTokens; color: root.textColor; font.pixelSize: 15; font.weight: Font.DemiBold }
+                                Text { text: appModel.trendMonthCost; color: root.mutedColor; font.pixelSize: 11 }
+                                Item { Layout.fillWidth: true }
+                                Text { text: appModel.trendPeak; color: root.mutedColor; font.pixelSize: 10 }
+                            }
+                            RowLayout {
+                                visible: appModel.trendMonthLabel !== ""
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 17
                                 Text {
                                     Layout.fillWidth: true
@@ -1202,7 +1194,6 @@ Rectangle {
                                     font.pixelSize: 10
                                     elide: Text.ElideRight
                                 }
-                                Text { text: appModel.trendPeak; color: root.mutedColor; font.pixelSize: 10 }
                             }
                             Item {
                                 visible: appModel.trendMonthLabel !== ""

@@ -171,7 +171,7 @@ class UITests(unittest.TestCase):
         self.addCleanup(window.deleteLater)
         self.addCleanup(window.hide)
         snapshot = UsageSnapshot(
-            providers={"codex": ProviderUsage("codex", today_tokens=7, week_tokens=9, month_tokens=12, today_cost=0.3, week_cost=0.5, month_cost=0.7, month_daily=[5, 0, 7])},
+            providers={"codex": ProviderUsage("codex", today_tokens=7, week_tokens=9, month_tokens=12, today_cost=0.3, week_cost=0.5, month_cost=0.7, month_daily=[5, 0, 7], month_daily_cost=[0.2, 0.0, 0.5])},
             scanned_at=datetime(2026, 9, 3, 12, tzinfo=timezone.utc),
         )
         window.render(RefreshResult(snapshot, {}, {}, state, [], None, "Bulbasaur"))
@@ -180,14 +180,16 @@ class UITests(unittest.TestCase):
         root = window.quick.rootObject()
         home = root.findChild(QObject, "homePage")
         trend = root.findChild(QObject, "monthTrendPanel")
+        metrics = root.findChild(QObject, "usageMetricRow")
         limits = root.findChild(QObject, "limitsPanel")
         badge = root.findChild(QObject, "growthBoostBadge")
         self.assertTrue(trend.isVisible())
+        self.assertGreater(metrics.width(), trend.width() - 40)
         self.assertGreater(trend.height(), 160)
         self.assertTrue(badge.isVisible())
-        self.assertEqual(window.view_model.monthTokens, "12")
+        self.assertEqual(window.view_model.trendMonthTokens, "12")
         self.assertEqual(window.view_model.weekCost, "$0.50")
-        self.assertEqual(window.view_model.monthCost, "$0.70")
+        self.assertEqual(window.view_model.trendMonthCost, "$0.70")
         self.assertEqual(window.view_model.monthTrend[1]["tokens"], 0)
         self.assertIn("7 tokens", window.view_model.monthTrend[2]["caption"])
         self.assertIn("3 set.", window.view_model.monthTrend[2]["caption"])
@@ -220,11 +222,15 @@ class UITests(unittest.TestCase):
         august[30] = 9
         model.set_month_history({"2026-08": (august, [0.0] * 30 + [0.5])})
         self.assertIn("Agosto 2026", model.trendMonthLabel)
+        self.assertEqual(model.trendMonthTokens, "9")
+        self.assertEqual(model.trendMonthCost, "$0.50")
         self.assertFalse(model.trendCanPrevious)
         self.assertTrue(model.trendCanNext)
         self.assertIn("$0.50", model.trendCaption)
         model.moveMonth(1)
         self.assertIn("Setembro 2026", model.trendMonthLabel)
+        self.assertEqual(model.trendMonthTokens, "12")
+        self.assertEqual(model.trendMonthCost, "$0.60")
         self.assertIn("$0.30", model.trendCaption)
 
     def test_unavailable_unused_cursor_does_not_create_provider_row(self):
