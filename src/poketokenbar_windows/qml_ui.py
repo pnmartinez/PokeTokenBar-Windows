@@ -1288,6 +1288,9 @@ class QmlMainWindow(QMainWindow):
         self.settings = settings
         self._geometry_ready = False
         self._last_normal_rect = QRect(self.geometry())
+        self._saved_normal_rect = QRect(self.geometry())
+        self._saved_maximized = False
+        self._reapply_rect_on_show = False
         self._geometry_timer = QTimer(self)
         self._geometry_timer.setSingleShot(True)
         self._geometry_timer.setInterval(250)
@@ -1369,23 +1372,30 @@ class QmlMainWindow(QMainWindow):
         rect = self.settings.value("main_window_rect")
         if isinstance(rect, QRect) and rect.isValid():
             self._last_normal_rect = QRect(rect)
+            self._saved_normal_rect = QRect(rect)
             self.setGeometry(rect)
-            maximized = self.settings.value("main_window_maximized", False)
-            if settings_bool(maximized, False):
+            self._saved_maximized = settings_bool(
+                self.settings.value("main_window_maximized", False), False
+            )
+            if self._saved_maximized:
                 self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+            self._reapply_rect_on_show = True
         else:
             saved = self.settings.value("main_window_geometry")
             if saved and self.restoreGeometry(saved):
                 self._last_normal_rect = QRect(self.normalGeometry())
+                self._saved_normal_rect = QRect(self._last_normal_rect)
+                self._saved_maximized = self.isMaximized()
+                self._reapply_rect_on_show = True
         visible = any(
-            screen.availableGeometry().intersects(self.normalGeometry())
+            screen.availableGeometry().intersects(self._saved_normal_rect)
             for screen in QGuiApplication.screens()
         )
         if not visible:
             screen = QGuiApplication.primaryScreen()
             if screen is not None:
                 area = screen.availableGeometry()
-                normal = self.normalGeometry()
+                normal = self._saved_normal_rect
                 self.setGeometry(
                     area.x() + max(0, (area.width() - normal.width()) // 2),
                     area.y() + max(0, (area.height() - normal.height()) // 2),
@@ -1393,15 +1403,30 @@ class QmlMainWindow(QMainWindow):
                     normal.height(),
                 )
                 self._last_normal_rect = QRect(self.geometry())
+                self._saved_normal_rect = QRect(self._last_normal_rect)
 
     def save_window_geometry(self) -> None:
         if not self._geometry_ready:
             return
-        normal = self._last_normal_rect if self.isMaximized() else self.geometry()
+        if self.isVisible():
+            maximized = self.isMaximized()
+            normal = (
+                QRect(self._last_normal_rect)
+                if maximized or self.isMinimized()
+                else QRect(self.geometry())
+            )
+            if not maximized and not self.isMinimized():
+                self._last_normal_rect = QRect(normal)
+            self._saved_maximized = maximized
+            self.settings.setValue("main_window_geometry", self.saveGeometry())
+        else:
+            # Hiding a snapped window can expose its previous unsnapped geometry.
+            normal = QRect(self._saved_normal_rect)
+            maximized = self._saved_maximized
         if normal.isValid():
+            self._saved_normal_rect = QRect(normal)
             self.settings.setValue("main_window_rect", normal)
-        self.settings.setValue("main_window_maximized", self.isMaximized())
-        self.settings.setValue("main_window_geometry", self.saveGeometry())
+        self.settings.setValue("main_window_maximized", maximized)
         self.settings.sync()
 
     def moveEvent(self, event) -> None:
@@ -1417,6 +1442,23 @@ class QmlMainWindow(QMainWindow):
             if not self.isMaximized() and not self.isMinimized():
                 self._last_normal_rect = QRect(self.geometry())
             self._geometry_timer.start()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._geometry_ready and self._reapply_rect_on_show:
+            self._reapply_rect_on_show = False
+            rect = QRect(self._saved_normal_rect)
+            QTimer.singleShot(0, lambda: self._apply_saved_window_rect(rect))
+
+    def _apply_saved_window_rect(self, rect: QRect) -> None:
+        if (
+            self.isVisible()
+            and not self.isMaximized()
+            and not self.isMinimized()
+            and rect.isValid()
+        ):
+            self.setGeometry(rect)
+            self._last_normal_rect = QRect(rect)
 
     def _sync_window_state(self) -> None:
         self.view_model._set("windowMaximized", self.isMaximized())
@@ -1484,5 +1526,6 @@ class QmlMainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         self._geometry_timer.stop()
         self.save_window_geometry()
+        self._reapply_rect_on_show = True
         event.ignore()
         self.hide()

@@ -109,6 +109,36 @@ class UITests(unittest.TestCase):
         self.assertEqual((second.width(), second.height()), (600, 680))
         self.assertEqual((second.x(), second.y()), (24, 32))
 
+    def test_qml_keeps_snapped_rect_after_hidden_geometry_reverts(self):
+        first = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(first.deleteLater)
+        area = self.app.primaryScreen().availableGeometry()
+        normal = (area.x() + 30, area.y() + 40, 600, 680)
+        snapped = (area.x() + area.width() - 560, area.y(), 560, 740)
+
+        first.show()
+        self.app.processEvents()
+        first.setGeometry(*normal)
+        first.setGeometry(*snapped)
+        self.app.processEvents()
+        first.close()
+        self.assertFalse(first.isVisible())
+        # Windows Snap can expose its previous normal geometry after hiding.
+        first.setGeometry(*normal)
+        first.save_window_geometry()  # TrayController.quit saves a second time.
+        saved = self.settings.value("main_window_rect")
+        self.assertEqual(saved.getRect(), snapped)
+
+        first.show()
+        self.app.processEvents()
+        self.assertEqual(first.geometry().getRect(), snapped)
+        first.close()
+        second = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(second.deleteLater)
+        second.show()
+        self.app.processEvents()
+        self.assertEqual(second.geometry().getRect(), snapped)
+
     def test_qml_restores_normal_rect_after_maximized_close(self):
         first = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
         self.addCleanup(first.deleteLater)
