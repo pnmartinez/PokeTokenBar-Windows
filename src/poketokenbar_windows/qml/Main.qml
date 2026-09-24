@@ -1225,7 +1225,17 @@ Rectangle {
                                     }
                                 }
                             }
-                            Item { visible: appModel.trendMonthLabel !== ""; Layout.preferredHeight: 4 }
+                            Item {
+                                visible: appModel.trendMonthLabel !== ""
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 4
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width
+                                    height: 1
+                                    color: root.borderColor
+                                }
+                            }
                             RowLayout {
                                 visible: appModel.trendMonthLabel !== ""
                                 Layout.fillWidth: true
