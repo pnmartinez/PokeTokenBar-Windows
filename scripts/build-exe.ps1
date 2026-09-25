@@ -3,8 +3,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$branch = [string](& git branch --show-current)
-$branch = $branch.Trim()
+$branch = & git branch --show-current
 if ($LASTEXITCODE -ne 0) {
     throw "Could not read the current Git branch."
 }
@@ -12,6 +11,7 @@ $isCi = $env:GITHUB_ACTIONS -eq "true"
 if (-not $branch -and $isCi) {
     $branch = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
 }
+$branch = ([string]$branch).Trim()
 if (-not $branch) {
     throw "Build from a named Git branch."
 }
