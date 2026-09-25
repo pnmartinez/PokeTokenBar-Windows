@@ -64,7 +64,7 @@ from poketokenbar_windows.state import (
     usage_delta,
     use_item,
 )
-from poketokenbar_windows.usage import month_daily_series, parse_claude_object, parse_codex_object, scan_all
+from poketokenbar_windows.usage import month_daily_series, parse_claude_object, parse_codex_object, scan_all, scan_month_history
 from poketokenbar_windows.windows import (
     APP_NAME,
     REGISTRY_VALUE_NAME,
@@ -847,6 +847,23 @@ class FormattingTests(unittest.TestCase):
 
 
 class MonthTrendTests(unittest.TestCase):
+    def test_period_costs_follow_the_same_boundaries_as_tokens(self):
+        now = datetime(2026, 9, 10, 12, tzinfo=timezone.utc)
+        entries = [
+            UsageEntry("prior-month", datetime(2026, 8, 31, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=3, explicit_cost=0.05),
+            UsageEntry("prior-week", datetime(2026, 9, 1, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=5, explicit_cost=0.10),
+            UsageEntry("this-week", datetime(2026, 9, 8, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=7, explicit_cost=0.20),
+            UsageEntry("today", now, "codex", "gpt", input_tokens=11, explicit_cost=0.30),
+            UsageEntry("future", datetime(2026, 9, 11, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=13, explicit_cost=0.40),
+        ]
+        with patch("poketokenbar_windows.usage.SCANNERS", {"codex": lambda since: entries}):
+            snapshot, errors = scan_all(now)
+        self.assertFalse(errors)
+        self.assertEqual((snapshot.today_tokens, snapshot.week_tokens, snapshot.month_tokens), (11, 18, 23))
+        self.assertAlmostEqual(snapshot.today_cost, 0.30)
+        self.assertAlmostEqual(snapshot.week_cost, 0.50)
+        self.assertAlmostEqual(snapshot.month_cost, 0.60)
+
     def test_current_month_has_dense_local_days_and_matches_period_total(self):
         now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
         entries = [
@@ -861,6 +878,38 @@ class MonthTrendTests(unittest.TestCase):
         self.assertFalse(errors)
         self.assertEqual(snapshot.month_daily, [5, 0, 7, 0])
         self.assertEqual(sum(snapshot.month_daily), snapshot.month_tokens)
+
+
+    def test_history_groups_local_months_and_keeps_costs(self):
+        now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+        entries = [
+            UsageEntry("aug", datetime(2026, 8, 31, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=9, explicit_cost=0.5),
+            UsageEntry("sep", datetime(2026, 9, 3, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=7, explicit_cost=0.25),
+            UsageEntry("future", datetime(2026, 10, 1, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=99),
+        ]
+        with patch("poketokenbar_windows.usage.SCANNERS", {"codex": lambda since: entries}):
+            history = scan_month_history(now)
+        self.assertEqual(set(history), {"2026-08", "2026-09"})
+        self.assertEqual(history["2026-08"][0][30], 9)
+        self.assertEqual(history["2026-09"][0][2], 7)
+        self.assertEqual(history["2026-09"][1][2], 0.25)
+
+
+    def test_unused_cursor_does_not_create_a_false_scan_warning(self):
+        now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+        with (
+            patch("poketokenbar_windows.usage.SCANNERS", {"cursor": lambda since: []}),
+            patch("poketokenbar_windows.cursor.last_scan_warning", "no session token"),
+        ):
+            snapshot, errors = scan_all(now)
+        self.assertFalse(snapshot.providers)
+        self.assertFalse(errors)
+        with (
+            patch("poketokenbar_windows.usage.SCANNERS", {"cursor": lambda since: []}),
+            patch("poketokenbar_windows.cursor.last_scan_warning", "network error"),
+        ):
+            _, errors = scan_all(now)
+        self.assertEqual(errors, {"cursor": "network error"})
 
 
 class RepeatGrowthTests(unittest.TestCase):
