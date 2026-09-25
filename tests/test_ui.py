@@ -90,6 +90,189 @@ class UITests(unittest.TestCase):
         self.assertEqual(window.minimumHeight(), 640)
         self.assertEqual((window.width(), window.height()), (560, 740))
 
+    def test_qml_restores_main_window_size_and_position(self):
+        first = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        first.show()
+        self.app.processEvents()
+        first.resize(600, 680)
+        first.move(24, 32)
+        self.app.processEvents()
+        first.close()
+        self.assertFalse(first.isVisible())
+        first.show()
+        self.app.processEvents()
+        self.assertEqual((first.x(), first.y(), first.width(), first.height()), (24, 32, 600, 680))
+        first.close()
+        second = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(second.deleteLater)
+        self.addCleanup(first.deleteLater)
+        self.assertEqual((second.width(), second.height()), (600, 680))
+        self.assertEqual((second.x(), second.y()), (24, 32))
+
+    def test_qml_keeps_snapped_rect_after_hidden_geometry_reverts(self):
+        first = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(first.deleteLater)
+        area = self.app.primaryScreen().availableGeometry()
+        normal = (area.x() + 30, area.y() + 40, 600, 680)
+        snapped = (area.x() + area.width() - 560, area.y(), 560, 740)
+
+        first.show()
+        self.app.processEvents()
+        first.setGeometry(*normal)
+        first.setGeometry(*snapped)
+        self.app.processEvents()
+        first.close()
+        self.assertFalse(first.isVisible())
+        # Windows Snap can expose its previous normal geometry after hiding.
+        first.setGeometry(*normal)
+        first.save_window_geometry()  # TrayController.quit saves a second time.
+        saved = self.settings.value("main_window_rect")
+        self.assertEqual(saved.getRect(), snapped)
+
+        first.show()
+        self.app.processEvents()
+        self.assertEqual(first.geometry().getRect(), snapped)
+        first.close()
+        second = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(second.deleteLater)
+        second.show()
+        self.app.processEvents()
+        self.assertEqual(second.geometry().getRect(), snapped)
+
+    def test_qml_restores_normal_rect_after_maximized_close(self):
+        first = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(first.deleteLater)
+        first.show()
+        self.app.processEvents()
+        first.resize(640, 700)
+        first.move(50, 60)
+        self.app.processEvents()
+        first.showMaximized()
+        self.app.processEvents()
+        first.close()
+        second = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(second.deleteLater)
+        self.assertTrue(second.isMaximized())
+        second.show()
+        self.app.processEvents()
+        second.showNormal()
+        self.app.processEvents()
+        self.assertEqual((second.x(), second.y(), second.width(), second.height()), (50, 60, 640, 700))
+
+    def test_qml_recovers_saved_window_from_disconnected_screen(self):
+        first = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(first.deleteLater)
+        first.show()
+        self.app.processEvents()
+        first.move(5000, 5000)
+        first.save_window_geometry()
+        first.hide()
+        second = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.addCleanup(second.deleteLater)
+        self.assertTrue(any(
+            second.frameGeometry().intersects(screen.availableGeometry())
+            for screen in self.app.screens()
+        ))
+
+    def test_qml_item_use_has_one_themed_confirmation_and_localized_feedback(self):
+        state = GameState(
+            mon=MonState(1, [1, 2, 3], 0, 0, "common", False, "Hardy"),
+            inventory={"rare_candy": 1, "mint": 0, "shiny_charm": 0},
+            language="gl",
+        )
+        window = QmlMainWindow(state, self.settings, FakeUIAPI())
+        self.addCleanup(window.deleteLater)
+        controller = TrayController.__new__(TrayController)
+        controller.state_lock = threading.Lock()
+        controller.state = state
+        controller.store = Mock()
+        controller.window = window
+        controller.api = FakeUIAPI()
+        controller.refresh = Mock()
+        with patch.object(QMessageBox, "question", side_effect=AssertionError("native dialog")):
+            controller._use_item("rare_candy")
+        self.assertEqual(controller.state.inventory["rare_candy"], 0)
+        self.assertEqual(window.view_model.feedbackText, "✓ Caramelo Raro usado")
+        controller.refresh.assert_called_once_with()
+
+    def test_month_trend_and_repeat_badge_fit_home_layout(self):
+        state = GameState(mon=MonState(1, [1, 2, 3], 0, 0, "common", False, "Hardy", True), language="gl")
+        window = QmlMainWindow(state, self.settings, FakeUIAPI())
+        self.addCleanup(window.deleteLater)
+        self.addCleanup(window.hide)
+        snapshot = UsageSnapshot(
+            providers={"codex": ProviderUsage("codex", today_tokens=7, week_tokens=9, month_tokens=12, today_cost=0.3, week_cost=0.5, month_cost=0.7, month_daily=[5, 0, 7], month_daily_cost=[0.2, 0.0, 0.5])},
+            scanned_at=datetime(2026, 9, 3, 12, tzinfo=timezone.utc),
+        )
+        window.render(RefreshResult(snapshot, {}, {}, state, [], None, "Bulbasaur"))
+        window.show()
+        self.app.processEvents()
+        root = window.quick.rootObject()
+        home = root.findChild(QObject, "homePage")
+        trend = root.findChild(QObject, "monthTrendPanel")
+        metrics = root.findChild(QObject, "usageMetricRow")
+        limits = root.findChild(QObject, "limitsPanel")
+        badge = root.findChild(QObject, "growthBoostBadge")
+        self.assertTrue(trend.isVisible())
+        self.assertGreater(metrics.width(), trend.width() - 40)
+        self.assertGreater(trend.height(), 160)
+        self.assertTrue(badge.isVisible())
+        self.assertEqual(window.view_model.trendMonthTokens, "12")
+        self.assertEqual(window.view_model.weekCost, "$0.50")
+        self.assertEqual(window.view_model.trendMonthCost, "$0.70")
+        self.assertEqual(window.view_model.monthTrend[1]["tokens"], 0)
+        self.assertIn("7 tokens", window.view_model.monthTrend[2]["caption"])
+        self.assertIn("3 set.", window.view_model.monthTrend[2]["caption"])
+        self.assertLessEqual(trend.mapToItem(home, 0, trend.height()).y(), limits.mapToItem(home, 0, 0).y())
+        self.assertLessEqual(limits.mapToItem(home, 0, limits.height()).y(), home.height())
+        full_month = UsageSnapshot(
+            providers={"codex": ProviderUsage("codex", month_tokens=30, month_daily=[1] * 30)},
+            scanned_at=datetime(2026, 9, 30, 12, tzinfo=timezone.utc),
+        )
+        window.render(RefreshResult(full_month, {}, {}, state, [], None, "Bulbasaur"))
+        self.assertEqual(window.view_model.monthTrend[28]["label"], "")
+        self.assertEqual(window.view_model.monthTrend[29]["label"], "30")
+
+    def test_month_navigation_loads_history_once_and_stops_at_first_data(self):
+        state = GameState(language="gl")
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+        snapshot = UsageSnapshot(
+            providers={"codex": ProviderUsage("codex", month_daily=[2, 3, 7], month_daily_cost=[0.1, 0.2, 0.3])},
+            scanned_at=datetime(2026, 9, 3, 12, tzinfo=timezone.utc),
+        )
+        model.render(RefreshResult(snapshot, {}, {}, state, [], None, "Pokemon Egg"))
+        requested = []
+        model.monthHistoryRequested.connect(lambda: requested.append(True))
+        self.assertTrue(model.trendCanPrevious)
+        self.assertFalse(model.trendCanNext)
+        model.moveMonth(-1)
+        self.assertEqual(requested, [True])
+        self.assertTrue(model.trendLoading)
+        august = [0] * 31
+        august[30] = 9
+        model.set_month_history({"2026-08": (august, [0.0] * 30 + [0.5])})
+        self.assertIn("Agosto 2026", model.trendMonthLabel)
+        self.assertEqual(model.trendMonthTokens, "9")
+        self.assertEqual(model.trendMonthCost, "$0.50")
+        self.assertFalse(model.trendCanPrevious)
+        self.assertTrue(model.trendCanNext)
+        self.assertIn("$0.50", model.trendCaption)
+        model.moveMonth(1)
+        self.assertIn("Setembro 2026", model.trendMonthLabel)
+        self.assertEqual(model.trendMonthTokens, "12")
+        self.assertEqual(model.trendMonthCost, "$0.60")
+        self.assertIn("$0.30", model.trendCaption)
+
+    def test_unavailable_unused_cursor_does_not_create_provider_row(self):
+        state = GameState()
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+        snapshot = UsageSnapshot(
+            providers={"codex": ProviderUsage("codex", today_tokens=12)},
+            scanned_at=datetime(2026, 9, 3, 12, tzinfo=timezone.utc),
+        )
+        model.render(RefreshResult(snapshot, {}, {"cursor": "not available"}, state, [], None, "Pokemon Egg"))
+        self.assertEqual([row["key"] for row in model.providers], ["codex"])
+
     def test_qml_home_has_no_page_level_scroll_and_lists_only_overflow_as_needed(self):
         qml = (
             Path(__file__).resolve().parents[1]
@@ -105,6 +288,7 @@ class UITests(unittest.TestCase):
             'Item {\n                id: homePage',
             qml,
         )
+        self.assertNotIn("appModel.wallet", home_block)
         self.assertIn("id: providersList", home_block)
         self.assertIn("id: limitsContent", home_block)
         self.assertIn(
@@ -367,6 +551,27 @@ class UITests(unittest.TestCase):
             model.catches[0]["description"],
             "Only stage 2 of 3",
         )
+
+    def test_bag_and_new_notification_preferences_are_localized_and_persisted(self):
+        state = GameState(language="gl", inventory={"rare_candy": 28, "mint": 2})
+        model = QmlViewModel(state, self.settings, FakeUIAPI())
+        self.assertEqual((model.rareCandyCount, model.mintCount), (28, 2))
+        self.assertEqual(model.rareCandyXp, "100M")
+        self.assertFalse(model.hasActiveCompanion)
+        self.assertIn("{amount}", model.strings["bag_candy_description"])
+        self.assertTrue(model.limitResetNotifications)
+        self.assertTrue(model.bankedResetNotifications)
+        self.assertEqual(model.strings["limit_reset_notifications"], "Reinicio dos límites esgotados")
+        self.assertEqual(model.strings["banked_reset_notifications"], "Novos reinicios dispoñibles engadidos")
+        self.assertEqual(model.strings["banked_reset_granted_title"], "Novo reinicio dispoñible")
+
+        model.setPreference("limitResetNotifications", False)
+        model.setPreference("bankedResetNotifications", False)
+        self.assertFalse(self.settings.value("limitResetNotifications", type=bool))
+        self.assertFalse(self.settings.value("bankedResetNotifications", type=bool))
+        reopened = QmlViewModel(state, self.settings, FakeUIAPI())
+        self.assertFalse(reopened.limitResetNotifications)
+        self.assertFalse(reopened.bankedResetNotifications)
 
     def test_legacy_desktop_pet_preferences_migrate_without_overwriting_current_values(self):
         self.settings.setValue("pet_visible", True)

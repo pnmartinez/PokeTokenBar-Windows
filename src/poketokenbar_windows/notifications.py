@@ -8,11 +8,15 @@ from .models import ProviderLimits
 
 
 LIMIT_NOTIFICATIONS_KEY = "limitNotifications"
+LIMIT_RESET_NOTIFICATIONS_KEY = "limitResetNotifications"
+BANKED_RESET_NOTIFICATIONS_KEY = "bankedResetNotifications"
 WARNING_THRESHOLD_KEY = "warnThreshold"
 CRITICAL_THRESHOLD_KEY = "critThreshold"
 COMPANION_NOTIFICATIONS_KEY = "companionNotifications"
 
 DEFAULT_LIMIT_NOTIFICATIONS = True
+DEFAULT_LIMIT_RESET_NOTIFICATIONS = True
+DEFAULT_BANKED_RESET_NOTIFICATIONS = True
 DEFAULT_WARNING_THRESHOLD = 80
 DEFAULT_CRITICAL_THRESHOLD = 95
 DEFAULT_COMPANION_NOTIFICATIONS = True
@@ -98,6 +102,55 @@ def evaluate_limit_alerts(
             )
     alerts.sort(key=lambda alert: (alert.tier, alert.used_percent, alert.key), reverse=True)
     return alerts, updated
+
+
+@dataclass(slots=True, frozen=True)
+class LimitChange:
+    kind: str
+    provider: str
+    window_label: str = ""
+    previous_count: int = 0
+    count: int = 0
+
+
+def evaluate_limit_changes(
+    limits_by_provider: Mapping[str, ProviderLimits],
+    observations: Mapping[str, float | int] | None = None,
+) -> tuple[list[LimitChange], dict[str, float | int]]:
+    """Detect fully depleted limit resets and newly granted reset credits.
+
+    The first valid observation is a baseline, so startup never claims that a
+    reset or grant just happened. Missing or failed provider data is ignored.
+    """
+    updated = dict(observations or {})
+    changes: list[LimitChange] = []
+    for provider, status in limits_by_provider.items():
+        if status.error:
+            continue
+        for index, window in enumerate(status.windows):
+            used = float(window.used_percent)
+            if not math.isfinite(used):
+                continue
+            identity = window.identifier or f"{index}|{window.label.lower()}"
+            key = f"used|{provider}|{identity}"
+            previous = updated.get(key)
+            if previous is not None and float(previous) >= 99.5 and used <= 0.5:
+                changes.append(LimitChange("recovered", provider, window.label))
+            updated[key] = used
+
+        if status.reset_credits_known:
+            key = f"credits|{provider}"
+            count = max(0, int(status.reset_credits_available))
+            previous = updated.get(key)
+            if previous is not None and count > int(previous):
+                changes.append(
+                    LimitChange(
+                        "banked", provider,
+                        previous_count=int(previous), count=count,
+                    )
+                )
+            updated[key] = count
+    return changes, updated
 
 
 @dataclass(slots=True, frozen=True)

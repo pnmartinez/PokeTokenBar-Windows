@@ -12,6 +12,7 @@ Rectangle {
     border.width: 1
 
     property int currentPage: 0
+    property int trendHoveredIndex: -1
     property string collectionMode: "dex"
     property int selectedDexIndex: -1
     readonly property var selectedDex: selectedDexIndex >= 0 && selectedDexIndex < appModel.dexBrowseEntries.length
@@ -41,6 +42,7 @@ Rectangle {
     property color panelAltColor: appModel.darkMode ? "#202b3b" : "#edf3ff"
     property color borderColor: appModel.darkMode ? "#2b394e" : "#dce3ed"
     property color accentColor: appModel.darkMode ? "#8facff" : "#315da8"
+    property color trendHoverColor: appModel.darkMode ? "#c2d1ff" : "#6388c7"
     property color accentSurface: appModel.darkMode ? "#263754" : "#dbe7fb"
     property color successColor: appModel.darkMode ? "#75d6a7" : "#237a55"
     property color warningColor: appModel.darkMode ? "#f0bc68" : "#a45b00"
@@ -69,6 +71,50 @@ Rectangle {
     Connections {
         target: root.Window.window
         function onActiveFocusItemChanged() { Qt.callLater(root.revealKeyboardFocus) }
+    }
+
+    Popup {
+        id: useItemPopup
+        objectName: "useItemPopup"
+        property string itemKind: ""
+        function confirm(kind) { itemKind = kind; open() }
+        parent: Overlay.overlay
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        width: Math.min(370, root.width - 32)
+        height: 158
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 16
+        Overlay.modal: Rectangle { color: "#80000000" }
+        background: Rectangle { color: root.panelColor; radius: 12; border.color: root.borderColor; border.width: 1 }
+        contentItem: ColumnLayout {
+            spacing: 11
+            Text { text: appModel.strings.use_item_title; color: root.textColor; font.pixelSize: 17; font.weight: Font.DemiBold }
+            Text {
+                Layout.fillWidth: true
+                text: root.format(appModel.strings.use_item_question, {item: useItemPopup.itemKind === "rare_candy" ? appModel.strings.rare_candy : appModel.strings.mint})
+                color: root.mutedColor
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+            }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: 8
+                AppButton { text: appModel.strings.cancel; onClicked: useItemPopup.close() }
+                AppButton {
+                    text: appModel.strings.confirm_use
+                    highlighted: true
+                    onClicked: {
+                        const kind = useItemPopup.itemKind
+                        useItemPopup.close()
+                        appModel.useItem(kind)
+                    }
+                }
+            }
+        }
     }
 
     component PageScroll: ScrollView {
@@ -273,6 +319,80 @@ Rectangle {
         border.width: 1
     }
 
+    component BagItemCard: Panel {
+        id: bagCard
+        property string itemKind: ""
+        property string itemName: ""
+        property string icon: ""
+        property string description: ""
+        property string effectHint: ""
+        property string unavailableReason: ""
+        property int count: 0
+        property bool passive: false
+        property bool canUse: false
+        Layout.fillWidth: true
+        Layout.preferredHeight: 128
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 14
+            spacing: 8
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Text {
+                    Layout.preferredWidth: 42
+                    Layout.alignment: Qt.AlignTop
+                    text: bagCard.icon
+                    font.pixelSize: 35
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 5
+                    RowLayout {
+                        spacing: 8
+                        Text { text: bagCard.itemName; color: root.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
+                        Text {
+                            visible: !bagCard.passive
+                            text: "×" + bagCard.count
+                            color: root.mutedColor
+                            font.pixelSize: 13
+                            font.weight: Font.Bold
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: bagCard.description
+                        color: root.mutedColor
+                        font.pixelSize: 13
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Text {
+                    Layout.fillWidth: true
+                    text: bagCard.passive || bagCard.canUse ? bagCard.effectHint : bagCard.unavailableReason
+                    color: bagCard.passive ? root.successColor : root.mutedColor
+                    font.pixelSize: 12
+                    font.weight: bagCard.passive ? Font.DemiBold : Font.Normal
+                    wrapMode: Text.WordWrap
+                }
+                AppButton {
+                    visible: !bagCard.passive && bagCard.canUse
+                    text: appModel.strings.bag_use
+                    accessibleName: bagCard.itemName + ": " + text
+                    implicitHeight: 34
+                    leftPadding: 10
+                    rightPadding: 10
+                    onClicked: useItemPopup.confirm(bagCard.itemKind)
+                }
+            }
+        }
+    }
+
     component InfoLabel: Text {
         required property string helpText
         color: root.textColor
@@ -468,46 +588,50 @@ Rectangle {
         ToolTip.visible: hovered || activeFocus
         ToolTip.delay: 500
         ToolTip.text: helpText
-        contentItem: Canvas {
-            id: windowGlyph
-            objectName: windowControl.objectName + "Glyph"
-            property string renderedKind: windowControl.iconKind
-            onRenderedKindChanged: requestPaint()
-            implicitWidth: 16
-            implicitHeight: 16
-            property color strokeColor: windowControl.closeStyle && windowControl.hovered
-                ? "#ffffff" : root.textColor
-            onStrokeColorChanged: requestPaint()
-            onPaint: {
-                const ctx = getContext("2d")
-                ctx.clearRect(0, 0, width, height)
-                ctx.strokeStyle = strokeColor
-                ctx.lineWidth = 1
-                ctx.lineCap = "square"
-                ctx.lineJoin = "miter"
-                if (renderedKind === "minimize") {
-                    ctx.beginPath()
-                    ctx.moveTo(3.5, 11.5)
-                    ctx.lineTo(12.5, 11.5)
-                    ctx.stroke()
-                } else if (renderedKind === "maximize") {
-                    ctx.strokeRect(3.5, 3.5, 9, 9)
-                } else if (renderedKind === "restore") {
-                    ctx.strokeRect(3.5, 5.5, 7, 7)
-                    ctx.beginPath()
-                    ctx.moveTo(5.5, 5.5)
-                    ctx.lineTo(5.5, 3.5)
-                    ctx.lineTo(12.5, 3.5)
-                    ctx.lineTo(12.5, 10.5)
-                    ctx.lineTo(10.5, 10.5)
-                    ctx.stroke()
-                } else {
-                    ctx.beginPath()
-                    ctx.moveTo(4, 4)
-                    ctx.lineTo(12, 12)
-                    ctx.moveTo(12, 4)
-                    ctx.lineTo(4, 12)
-                    ctx.stroke()
+        padding: 0
+        contentItem: Item {
+            Canvas {
+                id: windowGlyph
+                objectName: windowControl.objectName + "Glyph"
+                anchors.centerIn: parent
+                width: 16
+                height: 16
+                property string renderedKind: windowControl.iconKind
+                onRenderedKindChanged: requestPaint()
+                property color strokeColor: windowControl.closeStyle && windowControl.hovered
+                    ? "#ffffff" : root.textColor
+                onStrokeColorChanged: requestPaint()
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.strokeStyle = strokeColor
+                    ctx.lineWidth = 1
+                    ctx.lineCap = "square"
+                    ctx.lineJoin = "miter"
+                    if (renderedKind === "minimize") {
+                        ctx.beginPath()
+                        ctx.moveTo(3.5, 11.5)
+                        ctx.lineTo(12.5, 11.5)
+                        ctx.stroke()
+                    } else if (renderedKind === "maximize") {
+                        ctx.strokeRect(3.5, 3.5, 9, 9)
+                    } else if (renderedKind === "restore") {
+                        ctx.strokeRect(3.5, 5.5, 7, 7)
+                        ctx.beginPath()
+                        ctx.moveTo(5.5, 5.5)
+                        ctx.lineTo(5.5, 3.5)
+                        ctx.lineTo(12.5, 3.5)
+                        ctx.lineTo(12.5, 10.5)
+                        ctx.lineTo(10.5, 10.5)
+                        ctx.stroke()
+                    } else {
+                        ctx.beginPath()
+                        ctx.moveTo(4, 4)
+                        ctx.lineTo(12, 12)
+                        ctx.moveTo(12, 4)
+                        ctx.lineTo(4, 12)
+                        ctx.stroke()
+                    }
                 }
             }
         }
@@ -624,20 +748,6 @@ Rectangle {
             radius: parent.radius
             color: progressTrack.barColor
             Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-        }
-    }
-
-    component MetricCard: Panel {
-        required property string label
-        required property string value
-        Layout.fillWidth: true
-        Layout.preferredHeight: 56
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 9
-            spacing: 1
-            Text { text: label; color: root.mutedColor; font.pixelSize: 11 }
-            Text { text: value; color: root.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
         }
     }
 
@@ -925,11 +1035,16 @@ Rectangle {
                                     anchors.centerIn: parent
                                     width: 48; height: 48
                                     visible: appModel.loading || appModel.revealActive
-                                    SequentialAnimation on rotation {
+                                    property int shakeFrame: 0
+                                    transform: Translate {
+                                        x: [0, -5, 5, -4, 4, -2, 2, 0][revealBall.shakeFrame] * revealBall.width / 96
+                                        y: revealBall.height * 0.1
+                                    }
+                                    Timer {
+                                        interval: 90
                                         running: revealBall.visible
-                                        loops: Animation.Infinite
-                                        NumberAnimation { from: -18; to: 18; duration: 200; easing.type: Easing.InOutQuad }
-                                        NumberAnimation { from: 18; to: -18; duration: 200; easing.type: Easing.InOutQuad }
+                                        repeat: true
+                                        onTriggered: revealBall.shakeFrame = (revealBall.shakeFrame + 1) % 8
                                     }
                                 }
                             }
@@ -949,7 +1064,25 @@ Rectangle {
                                         onClicked: appModel.requestRefresh()
                                     }
                                 }
-                                Text { text: appModel.companionSubtitle; color: root.mutedColor; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    Text { text: appModel.companionSubtitle; color: root.mutedColor; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    Rectangle {
+                                        objectName: "growthBoostBadge"
+                                        visible: appModel.growthBoost
+                                        Layout.preferredWidth: 30
+                                        Layout.preferredHeight: 18
+                                        radius: 9
+                                        color: root.darkMode ? "#503b22" : "#fff0d6"
+                                        Text { anchors.centerIn: parent; text: appModel.strings.repeat_boost; color: root.warningColor; font.pixelSize: 10; font.weight: Font.Bold }
+                                        HoverHandler { id: growthHover }
+                                        ToolTip.visible: growthHover.hovered
+                                        ToolTip.delay: 450
+                                        ToolTip.text: appModel.strings.repeat_boost_help
+                                        Accessible.name: appModel.strings.repeat_boost_help
+                                    }
+                                }
                                 Text { objectName: "companionEvolution"; text: appModel.companionEvolutionText; color: appModel.darkMode ? "#96a5bc" : "#66758a"; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
                                 Item { Layout.fillHeight: true }
                                 RowLayout {
@@ -962,15 +1095,227 @@ Rectangle {
                         }
                     }
 
-                    GridLayout {
+                    Panel {
+                        id: usagePanel
+                        objectName: "monthTrendPanel"
                         Layout.fillWidth: true
-                        columns: width >= 720 ? 4 : 2
-                        columnSpacing: 7
-                        rowSpacing: 7
-                        MetricCard { label: appModel.strings.tokens_today; value: appModel.todayTokens }
-                        MetricCard { label: appModel.strings.estimated_cost; value: appModel.todayCost }
-                        MetricCard { label: appModel.strings.this_week; value: appModel.weekTokens }
-                        MetricCard { label: appModel.strings.wallet; value: appModel.wallet }
+                        Layout.preferredHeight: appModel.trendMonthLabel !== "" ? 198 : 101
+                        Layout.minimumHeight: Layout.preferredHeight
+                        Layout.maximumHeight: Layout.preferredHeight
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 4
+                            RowLayout {
+                                id: usageMetricRow
+                                objectName: "usageMetricRow"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 55
+                                Layout.minimumHeight: 55
+                                Layout.maximumHeight: 55
+                                spacing: 5
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 0
+                                    Layout.fillHeight: true
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 0
+                                        Item {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 18
+                                            Text {
+                                                text: appModel.strings.tokens_today
+                                                anchors.left: parent.left
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                color: root.mutedColor
+                                                font.pixelSize: 12
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.alignment: Qt.AlignLeft
+                                            Layout.preferredHeight: 24
+                                            spacing: 5
+                                            Text { text: appModel.todayTokens; color: root.textColor; font.pixelSize: 20; font.weight: Font.DemiBold }
+                                            Text { text: appModel.todayCost; color: root.mutedColor; font.pixelSize: 11 }
+                                        }
+                                    }
+                                }
+                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 35; color: root.borderColor }
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 0
+                                    Layout.fillHeight: true
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 0
+                                        Item {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 18
+                                            Text {
+                                                text: appModel.strings.this_week
+                                                anchors.left: parent.left
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                color: root.mutedColor
+                                                font.pixelSize: 12
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.alignment: Qt.AlignLeft
+                                            Layout.preferredHeight: 24
+                                            spacing: 5
+                                            Text { text: appModel.weekTokens; color: root.textColor; font.pixelSize: 20; font.weight: Font.DemiBold }
+                                            Text { text: appModel.weekCost; color: root.mutedColor; font.pixelSize: 11 }
+                                        }
+                                    }
+                                }
+                                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 35; color: root.borderColor }
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 0
+                                    Layout.fillHeight: true
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 0
+                                        Item {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 18
+                                            RowLayout {
+                                                anchors.left: parent.left
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 1
+                                                Button {
+                                                    objectName: "trendPreviousMonth"
+                                                    enabled: appModel.trendCanPrevious
+                                                    implicitWidth: 17; implicitHeight: 19
+                                                    Accessible.name: appModel.strings.trend_previous_month
+                                                    text: "‹"
+                                                    font.pixelSize: 17
+                                                    onClicked: { root.trendHoveredIndex = -1; appModel.moveMonth(-1) }
+                                                    background: Rectangle { radius: 4; color: parent.hovered ? root.panelAltColor : "transparent" }
+                                                    contentItem: Text { text: parent.text; color: parent.enabled ? root.accentColor : root.mutedColor; opacity: parent.enabled ? 1 : 0.4; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                                }
+                                                Text { text: appModel.trendMonthLabel; color: root.accentColor; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                                Button {
+                                                    objectName: "trendNextMonth"
+                                                    enabled: appModel.trendCanNext
+                                                    implicitWidth: 17; implicitHeight: 19
+                                                    Accessible.name: appModel.strings.trend_next_month
+                                                    text: "›"
+                                                    font.pixelSize: 17
+                                                    onClicked: { root.trendHoveredIndex = -1; appModel.moveMonth(1) }
+                                                    background: Rectangle { radius: 4; color: parent.hovered ? root.panelAltColor : "transparent" }
+                                                    contentItem: Text { text: parent.text; color: parent.enabled ? root.accentColor : root.mutedColor; opacity: parent.enabled ? 1 : 0.4; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                                }
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.alignment: Qt.AlignLeft
+                                            Layout.preferredHeight: 24
+                                            spacing: 5
+                                            Text { text: appModel.trendMonthTokens; color: root.textColor; font.pixelSize: 20; font.weight: Font.DemiBold }
+                                            Text { text: appModel.trendMonthCost; color: root.mutedColor; font.pixelSize: 11 }
+                                        }
+                                    }
+                                }
+                            }
+                            Item {
+                                visible: appModel.trendMonthLabel !== ""
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 4
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width
+                                    height: 1
+                                    color: root.borderColor
+                                }
+                            }
+                            RowLayout {
+                                visible: appModel.trendMonthLabel !== ""
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 20
+                                Text { text: appModel.strings.month_trend; color: root.textColor; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                Item { Layout.fillWidth: true }
+                                Text { text: appModel.trendPeak; color: root.mutedColor; font.pixelSize: 10 }
+                            }
+                            RowLayout {
+                                visible: appModel.trendMonthLabel !== ""
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 17
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: appModel.trendLoading ? appModel.strings.trend_loading
+                                        : (root.trendHoveredIndex >= 0 && root.trendHoveredIndex < appModel.monthTrend.length
+                                            ? appModel.monthTrend[root.trendHoveredIndex].caption : appModel.trendCaption)
+                                    color: root.mutedColor
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            Item {
+                                visible: appModel.trendMonthLabel !== ""
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Rectangle {
+                                    anchors.left: parent.left; anchors.right: parent.right
+                                    anchors.bottom: parent.bottom; anchors.bottomMargin: 15
+                                    height: 1
+                                    color: root.borderColor
+                                }
+                                Row {
+                                    id: trendBars
+                                    anchors.fill: parent
+                                    spacing: 2
+                                    Repeater {
+                                        model: appModel.monthTrend
+                                        delegate: Item {
+                                            required property var modelData
+                                            required property int index
+                                            property bool hoveredDay: root.trendHoveredIndex === index
+                                            width: Math.max(2, (trendBars.width - Math.max(0, appModel.monthTrend.length - 1) * trendBars.spacing) / Math.max(1, appModel.monthTrend.length))
+                                            height: trendBars.height
+                                            Rectangle {
+                                                objectName: "trendDayBar"
+                                                anchors.bottom: parent.bottom
+                                                anchors.bottomMargin: 16
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                width: Math.max(2, parent.width - 2)
+                                                height: modelData.barHeight
+                                                radius: 2
+                                                color: parent.hoveredDay ? root.trendHoverColor
+                                                    : (modelData.today ? root.accentColor
+                                                        : (root.darkMode ? "#71839f" : "#8193af"))
+                                                opacity: modelData.empty && !parent.hoveredDay ? 0.25 : 0.95
+                                            }
+                                            Rectangle {
+                                                visible: modelData.weekend
+                                                anchors.bottom: parent.bottom
+                                                anchors.bottomMargin: 11
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                width: 1.5; height: 3
+                                                color: root.mutedColor
+                                            }
+                                            Text {
+                                                anchors.bottom: parent.bottom
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                text: modelData.label
+                                                color: root.mutedColor
+                                                font.pixelSize: 8
+                                            }
+                                            HoverHandler {
+                                                onHoveredChanged: root.trendHoveredIndex = hovered ? index : -1
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     Panel {
@@ -1476,59 +1821,57 @@ Rectangle {
                         columns: width > 740 ? 2 : 1
                         columnSpacing: 8
                         rowSpacing: 8
-                        Panel {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 126
-                            RowLayout {
-                                anchors.fill: parent; anchors.margins: 12; spacing: 12
-                                Item {
-                                    Layout.preferredWidth: 54
-                                    Layout.preferredHeight: 54
-                                    Text { anchors.centerIn: parent; text: "🍬"; font.pixelSize: 36 }
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Text { text: appModel.strings.rare_candy; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
-                                    Text { text: root.format(appModel.strings.available_count, {count: appModel.rareCandyCount}); color: root.mutedColor; font.pixelSize: 12 }
-                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.use_on_companion; enabled: appModel.rareCandyCount > 0; onClicked: appModel.useItem("rare_candy") }
-                                }
-                            }
+                        BagItemCard {
+                            objectName: "rareCandyBagCard"
+                            visible: appModel.rareCandyCount > 0
+                            itemKind: "rare_candy"
+                            itemName: appModel.strings.rare_candy
+                            icon: "🍬"
+                            count: appModel.rareCandyCount
+                            description: root.format(appModel.strings.bag_candy_description, {amount: appModel.rareCandyXp})
+                            effectHint: root.format(appModel.strings.bag_candy_effect, {amount: appModel.rareCandyXp})
+                            unavailableReason: appModel.strings.bag_use_after_hatch
+                            canUse: appModel.hasActiveCompanion
                         }
-                        Panel {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 126
-                            RowLayout {
-                                anchors.fill: parent; anchors.margins: 12; spacing: 12
-                                Item {
-                                    Layout.preferredWidth: 54
-                                    Layout.preferredHeight: 54
-                                    Text { anchors.centerIn: parent; text: "🌿"; font.pixelSize: 36 }
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Text { text: appModel.strings.mint; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
-                                    Text { text: root.format(appModel.strings.available_count, {count: appModel.mintCount}); color: root.mutedColor; font.pixelSize: 12 }
-                                    AppButton { Layout.alignment: Qt.AlignLeft; text: appModel.strings.change_nature; enabled: appModel.mintCount > 0; onClicked: appModel.useItem("mint") }
-                                }
-                            }
+                        BagItemCard {
+                            objectName: "mintBagCard"
+                            visible: appModel.mintCount > 0
+                            itemKind: "mint"
+                            itemName: appModel.strings.mint
+                            icon: "🌿"
+                            count: appModel.mintCount
+                            description: appModel.strings.bag_mint_description
+                            effectHint: appModel.strings.bag_mint_effect
+                            unavailableReason: appModel.strings.bag_use_after_hatch
+                            canUse: appModel.hasActiveCompanion
                         }
-                        Panel {
-                            Layout.fillWidth: true
+                        BagItemCard {
+                            objectName: "shinyCharmBagCard"
+                            visible: appModel.shinyCharmActive
                             Layout.columnSpan: bagGrid.columns
-                            Layout.preferredHeight: 126
-                            RowLayout {
-                                anchors.fill: parent; anchors.margins: 12; spacing: 12
-                                Item {
-                                    Layout.preferredWidth: 54
-                                    Layout.preferredHeight: 54
-                                    Text { anchors.centerIn: parent; text: "✨"; font.pixelSize: 30 }
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Text { text: appModel.strings.shiny_charm; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium; Layout.fillWidth: true }
-                                    Text { text: appModel.shinyCharmActive ? appModel.strings.charm_active : appModel.strings.charm_inactive; color: appModel.shinyCharmActive ? root.successColor : root.mutedColor; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                                }
-                            }
+                            itemKind: "shiny_charm"
+                            itemName: appModel.strings.shiny_charm
+                            icon: "✨"
+                            description: appModel.strings.bag_charm_description
+                            effectHint: appModel.strings.bag_charm_effect
+                            passive: true
+                        }
+                    }
+                    Panel {
+                        visible: appModel.rareCandyCount === 0 && appModel.mintCount === 0 && !appModel.shinyCharmActive
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 14
+                        Layout.rightMargin: 14
+                        Layout.preferredHeight: 130
+                        Text {
+                            anchors.centerIn: parent
+                            width: parent.width - 28
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            text: appModel.strings.bag_empty
+                            color: root.mutedColor
+                            font.pixelSize: 13
+                            font.weight: Font.Medium
                         }
                     }
                 }
@@ -1618,6 +1961,7 @@ Rectangle {
 
             PageScroll {
                 id: settingsPage
+                objectName: "settingsPage"
                 clip: true
                 contentWidth: availableWidth
                 ColumnLayout {
@@ -1734,11 +2078,12 @@ Rectangle {
 
 
                         Panel {
+                            objectName: "limitsSettingsPanel"
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 374
+                            Layout.preferredHeight: 285
                             ColumnLayout {
                                 anchors.fill: parent; anchors.margins: 12; spacing: 7
-                                Text { text: appModel.strings.limits_alerts; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
+                                Text { text: appModel.strings.limits_section; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
                                 RowLayout {
                                     Layout.fillWidth: true
                                     InfoLabel { text: appModel.strings.show_quota; helpText: appModel.strings.quota_help; Layout.fillWidth: true }
@@ -1762,8 +2107,6 @@ Rectangle {
                                     }
                                 }
                                 ToggleRow { label: appModel.strings.forecast_timed; detail: appModel.strings.forecast_help; checked: appModel.forecastEnabled; onChanged: value => appModel.setPreference("forecastEnabled", value) }
-                                ToggleRow { label: appModel.strings.limit_notifications; detail: appModel.strings.limit_notifications_help; checked: appModel.limitNotifications; onChanged: value => appModel.setPreference("limitNotifications", value) }
-                                ToggleRow { label: appModel.strings.pokemon_notifications; detail: appModel.strings.pokemon_notifications_help; checked: appModel.companionNotifications; onChanged: value => appModel.setPreference("companionNotifications", value) }
                                 RowLayout {
                                     Layout.fillWidth: true
                                     InfoLabel { text: appModel.strings.warning; helpText: appModel.strings.warning_help; Layout.fillWidth: true }
@@ -1774,6 +2117,20 @@ Rectangle {
                                     InfoLabel { text: appModel.strings.critical; helpText: appModel.strings.critical_help; Layout.fillWidth: true }
                                     StyledSpinBox { objectName: "criticalThresholdSpin"; from: 80; to: 100; stepSize: 5; value: appModel.criticalThreshold; editable: false; activeFocusOnTab: true; Accessible.name: appModel.strings.critical_threshold; textFromValue: value => value + "%"; valueFromText: text => parseInt(text); onValueModified: appModel.setPreference("criticalThreshold", value); contentItem.activeFocusOnTab: false; FocusFrame { } }
                                 }
+                            }
+                        }
+
+                        Panel {
+                            objectName: "notificationSettingsPanel"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 245
+                            ColumnLayout {
+                                anchors.fill: parent; anchors.margins: 12; spacing: 7
+                                Text { text: appModel.strings.notifications_section; color: root.textColor; font.pixelSize: 15; font.weight: Font.Medium }
+                                ToggleRow { label: appModel.strings.limit_notifications; detail: appModel.strings.limit_notifications_help; checked: appModel.limitNotifications; onChanged: value => appModel.setPreference("limitNotifications", value) }
+                                ToggleRow { label: appModel.strings.limit_reset_notifications; detail: appModel.strings.limit_reset_notifications_help; checked: appModel.limitResetNotifications; onChanged: value => appModel.setPreference("limitResetNotifications", value) }
+                                ToggleRow { label: appModel.strings.banked_reset_notifications; detail: appModel.strings.banked_reset_notifications_help; checked: appModel.bankedResetNotifications; onChanged: value => appModel.setPreference("bankedResetNotifications", value) }
+                                ToggleRow { label: appModel.strings.pokemon_notifications; detail: appModel.strings.pokemon_notifications_help; checked: appModel.companionNotifications; onChanged: value => appModel.setPreference("companionNotifications", value) }
                             }
                         }
 

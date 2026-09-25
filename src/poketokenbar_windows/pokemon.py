@@ -46,11 +46,13 @@ def rarity_from(capture_rate: int, is_legendary: bool, is_mythical: bool) -> str
     return "common"
 
 
-def phase_threshold(rarity: str, total_forms: int, stage_index: int) -> int:
+def phase_threshold(rarity: str, total_forms: int, stage_index: int, growth_multiplier: int = 1) -> int:
     k = max(1, total_forms)
     i = stage_index + 1
     denominator = k * (k + 1) / 2.0
-    return round(GRADUATION_TOTALS[rarity] * i / denominator)
+    standard = round(GRADUATION_TOTALS[rarity] * i / denominator)
+    multiplier = max(1, growth_multiplier)
+    return max(1, (standard + multiplier // 2) // multiplier)
 
 
 def egg_price(tier: str | None = None) -> int:

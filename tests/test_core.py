@@ -40,6 +40,7 @@ from poketokenbar_windows.models import (
     LimitWindow,
     ProviderLimits,
     RateLimitResetCredit,
+    UsageEntry,
 )
 from poketokenbar_windows.pokemon import (
     EGG_HATCH_THRESHOLD,
@@ -51,15 +52,18 @@ from poketokenbar_windows.pokemon import (
     rarity_from,
 )
 from poketokenbar_windows.state import (
+    CatchRecord,
     GameState,
+    MonState,
     StateStore,
     apply_limit_rewards,
     apply_usage,
     buy_egg,
     companion_progress_percent,
     usage_delta,
+    use_item,
 )
-from poketokenbar_windows.usage import parse_claude_object, parse_codex_object
+from poketokenbar_windows.usage import month_daily_series, parse_claude_object, parse_codex_object, scan_all, scan_month_history
 from poketokenbar_windows.windows import (
     APP_NAME,
     REGISTRY_VALUE_NAME,
@@ -276,6 +280,14 @@ class StateTests(unittest.TestCase):
         events = apply_usage(state, first, FakeAPI())
         self.assertEqual(events, ["evolved:2"])
         self.assertEqual(state.mon.current_id, 2)
+
+    def test_rare_candy_waits_for_a_hatched_pokemon(self):
+        state = GameState(inventory={"rare_candy": 1})
+        ok, message, events = use_item(state, "rare_candy", FakeAPI())
+        self.assertFalse(ok)
+        self.assertEqual(message, "No Pokemon to use a Rare Candy on")
+        self.assertEqual(events, [])
+        self.assertEqual(state.inventory["rare_candy"], 1)
 
     def test_limit_candy_is_once_per_window_after_initial_seed(self):
         state = GameState()
@@ -591,6 +603,7 @@ class CodexLimitsTests(unittest.TestCase):
         self.assertEqual(result.windows[2].duration_minutes, 10_080)
         self.assertEqual(result.windows[2].identifier, "base_model_inference.primary")
         self.assertEqual(result.reset_credits_available, 1)
+        self.assertTrue(result.reset_credits_known)
         self.assertEqual(len(result.reset_credits), 1)
         self.assertEqual(result.reset_credits[0].title, "Full reset (Weekly + 5 hr)")
         self.assertEqual(result.reset_credits[0].expires_at.timestamp(), 1_789_000_000)
@@ -804,6 +817,123 @@ class FormattingTests(unittest.TestCase):
         )
         self.assertEqual(limit_reset_urgency(limits, now), "neutral")
         self.assertEqual(limit_reset_tray_warning(limits, now), "")
+
+
+class MonthTrendTests(unittest.TestCase):
+    def test_period_costs_follow_the_same_boundaries_as_tokens(self):
+        now = datetime(2026, 9, 10, 12, tzinfo=timezone.utc)
+        entries = [
+            UsageEntry("prior-month", datetime(2026, 8, 31, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=3, explicit_cost=0.05),
+            UsageEntry("prior-week", datetime(2026, 9, 1, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=5, explicit_cost=0.10),
+            UsageEntry("this-week", datetime(2026, 9, 8, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=7, explicit_cost=0.20),
+            UsageEntry("today", now, "codex", "gpt", input_tokens=11, explicit_cost=0.30),
+            UsageEntry("future", datetime(2026, 9, 11, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=13, explicit_cost=0.40),
+        ]
+        with patch("poketokenbar_windows.usage.SCANNERS", {"codex": lambda since: entries}):
+            snapshot, errors = scan_all(now)
+        self.assertFalse(errors)
+        self.assertEqual((snapshot.today_tokens, snapshot.week_tokens, snapshot.month_tokens), (11, 18, 23))
+        self.assertAlmostEqual(snapshot.today_cost, 0.30)
+        self.assertAlmostEqual(snapshot.week_cost, 0.50)
+        self.assertAlmostEqual(snapshot.month_cost, 0.60)
+
+    def test_current_month_has_dense_local_days_and_matches_period_total(self):
+        now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+        entries = [
+            UsageEntry("old", datetime(2026, 8, 31, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=99),
+            UsageEntry("one", datetime(2026, 9, 1, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=5),
+            UsageEntry("three", datetime(2026, 9, 3, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=7),
+            UsageEntry("future", datetime(2026, 9, 6, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=20),
+        ]
+        self.assertEqual(month_daily_series(entries, now), [5, 0, 7, 0])
+        with patch("poketokenbar_windows.usage.SCANNERS", {"codex": lambda since: entries}):
+            snapshot, errors = scan_all(now)
+        self.assertFalse(errors)
+        self.assertEqual(snapshot.month_daily, [5, 0, 7, 0])
+        self.assertEqual(sum(snapshot.month_daily), snapshot.month_tokens)
+
+
+    def test_history_groups_local_months_and_keeps_costs(self):
+        now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+        entries = [
+            UsageEntry("aug", datetime(2026, 8, 31, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=9, explicit_cost=0.5),
+            UsageEntry("sep", datetime(2026, 9, 3, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=7, explicit_cost=0.25),
+            UsageEntry("future", datetime(2026, 10, 1, 12, tzinfo=timezone.utc), "codex", "gpt", input_tokens=99),
+        ]
+        with patch("poketokenbar_windows.usage.SCANNERS", {"codex": lambda since: entries}):
+            history = scan_month_history(now)
+        self.assertEqual(set(history), {"2026-08", "2026-09"})
+        self.assertEqual(history["2026-08"][0][30], 9)
+        self.assertEqual(history["2026-09"][0][2], 7)
+        self.assertEqual(history["2026-09"][1][2], 0.25)
+
+
+    def test_unused_cursor_does_not_create_a_false_scan_warning(self):
+        now = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+        with (
+            patch("poketokenbar_windows.usage.SCANNERS", {"cursor": lambda since: []}),
+            patch("poketokenbar_windows.cursor.last_scan_warning", "no session token"),
+        ):
+            snapshot, errors = scan_all(now)
+        self.assertFalse(snapshot.providers)
+        self.assertFalse(errors)
+        with (
+            patch("poketokenbar_windows.usage.SCANNERS", {"cursor": lambda since: []}),
+            patch("poketokenbar_windows.cursor.last_scan_warning", "network error"),
+        ):
+            _, errors = scan_all(now)
+        self.assertEqual(errors, {"cursor": "network error"})
+
+
+class RepeatGrowthTests(unittest.TestCase):
+    def test_repeat_base_species_gets_persistent_half_threshold(self):
+        state = GameState(catches=[CatchRecord(3, 1, [1, 2, 3], "common", False, "Hardy", "2026-09-01")])
+        apply_usage(state, EGG_HATCH_THRESHOLD, FakeAPI())
+        self.assertTrue(state.mon.has_growth_boost)
+        self.assertEqual(state.mon.stage_threshold * 2, phase_threshold("common", 3, 0))
+        state.inventory["rare_candy"] = 1
+        ok, _, events = use_item(state, "rare_candy", FakeAPI())
+        self.assertTrue(ok)
+        self.assertEqual(events, ["evolved:2"])
+        self.assertEqual(state.mon.used_at_stage, 100_000_000 - phase_threshold("common", 3, 0, 2))
+        with tempfile.TemporaryDirectory() as folder:
+            store = StateStore(Path(folder) / "state.json")
+            store.save(state)
+            restored = store.load()
+        self.assertTrue(restored.mon.has_growth_boost)
+        self.assertEqual(restored.mon.stage_threshold, state.mon.stage_threshold)
+
+    def test_discarded_unfinished_catch_does_not_unlock_boost(self):
+        state = GameState(
+            mon=MonState(1, [1, 2, 3], 0, 0, "common", False, "Hardy"),
+            catches=[CatchRecord(1, 1, [1, 2, 3], "common", False, "Hardy", "2026-09-01")],
+            used_since_install=1_000_000_000,
+        )
+        self.assertTrue(buy_egg(state, None)[0])
+        apply_usage(state, EGG_HATCH_THRESHOLD, FakeAPI())
+        self.assertFalse(state.mon.has_growth_boost)
+
+    def test_legacy_active_pokemon_defaults_to_normal_growth(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            path.write_text(json.dumps({"mon": {
+                "base_id": 1, "path_ids": [1, 2, 3], "stage_index": 0,
+                "used_at_stage": 0, "rarity": "common", "is_shiny": False, "nature": "Hardy",
+            }}), encoding="utf-8")
+            restored = StateStore(path).load()
+        self.assertIsNotNone(restored.mon)
+        self.assertFalse(restored.mon.has_growth_boost)
+
+    def test_boost_rounds_half_tokens_up_like_upstream(self):
+        standard = phase_threshold("common", 7, 3)
+        self.assertEqual(standard % 2, 1)
+        self.assertEqual(phase_threshold("common", 7, 3, 2), (standard + 1) // 2)
+
+    def test_first_hatch_stays_at_normal_growth(self):
+        state = GameState()
+        apply_usage(state, EGG_HATCH_THRESHOLD, FakeAPI())
+        self.assertFalse(state.mon.has_growth_boost)
+        self.assertEqual(state.mon.stage_threshold, phase_threshold("common", 3, 0))
 
 
 if __name__ == "__main__":

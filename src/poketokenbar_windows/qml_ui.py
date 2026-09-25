@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+from calendar import monthrange
+from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEvent, Property, QObject, QSettings, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QDate, QEvent, Property, QObject, QRect, QSettings, Qt, QTimer, QUrl, Signal, Slot, QLocale
 from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QMainWindow
@@ -30,6 +33,10 @@ from .formatting import (
     ordered_limit_windows,
 )
 from .notifications import (
+    BANKED_RESET_NOTIFICATIONS_KEY,
+    DEFAULT_BANKED_RESET_NOTIFICATIONS,
+    DEFAULT_LIMIT_RESET_NOTIFICATIONS,
+    LIMIT_RESET_NOTIFICATIONS_KEY,
     COMPANION_NOTIFICATIONS_KEY,
     CRITICAL_THRESHOLD_KEY,
     DEFAULT_COMPANION_NOTIFICATIONS,
@@ -51,14 +58,14 @@ from .pet_logic import PET_DEFAULT_SIZE, normalize_pet_size, settings_bool
 from .pokemon import (
     EGG_HATCH_THRESHOLD,
     MINT_PRICE,
+    RARE_CANDY_XP,
     RARE_CANDY_PRICE,
     SHINY_CHARM_PRICE,
     PokeAPIClient,
     egg_price,
-    phase_threshold,
 )
 from .state import GameState, companion_progress_percent, owned_representative_options
-from .usage import PROVIDER_LABELS
+from .usage import PROVIDER_LABELS, scan_month_history
 from .windows import APP_NAME, autostart_enabled, set_autostart
 
 
@@ -151,6 +158,7 @@ class QmlViewModel(QObject):
     windowCloseRequested = Signal()
     windowMoveRequested = Signal()
     windowResizeRequested = Signal(int)
+    monthHistoryRequested = Signal()
 
     def __init__(self, state: GameState, settings: QSettings, api: PokeAPIClient):
         super().__init__()
@@ -158,6 +166,11 @@ class QmlViewModel(QObject):
         self.settings = settings
         self.api = api
         self._dex_page = 0
+        self._current_month = ""
+        self._selected_month = ""
+        self._month_history: dict[str, tuple[list[int], list[float]]] | None = None
+        self._pending_previous = False
+        self._snapshot = None
         self._dex_filter = "all"
         self._dex_shiny_by_species: dict[int, bool] = {}
         language = normalize_language(state.language)
@@ -179,8 +192,19 @@ class QmlViewModel(QObject):
             "todayTokens": "—",
             "todayCost": "—",
             "weekTokens": "—",
+            "weekCost": "—",
             "wallet": compact_tokens(state.wallet),
             "providers": [],
+            "monthTrend": [],
+            "trendMonthLabel": "",
+            "trendMonthTokens": "—",
+            "trendMonthCost": "—",
+            "trendCaption": "",
+            "trendPeak": "",
+            "trendCanPrevious": False,
+            "trendCanNext": False,
+            "trendLoading": False,
+            "growthBoost": False,
             "limits": [],
             "collection": [],
             "dexEntries": [],
@@ -193,8 +217,10 @@ class QmlViewModel(QObject):
             "catches": [],
             "shopItems": [],
             "rareCandyCount": 0,
+            "rareCandyXp": compact_tokens(RARE_CANDY_XP),
             "mintCount": 0,
             "shinyCharmActive": False,
+            "hasActiveCompanion": state.mon is not None,
             "representativeFollowsCurrent": state.representative_species_id is None,
             "refreshMinutes": int(settings.value("refresh_minutes", 5)),
             "petEnabled": settings_bool(settings.value(PET_ENABLED_KEY, False), False),
@@ -218,6 +244,18 @@ class QmlViewModel(QObject):
             "limitNotifications": settings_bool(
                 settings.value(LIMIT_NOTIFICATIONS_KEY, DEFAULT_LIMIT_NOTIFICATIONS),
                 DEFAULT_LIMIT_NOTIFICATIONS,
+            ),
+            "limitResetNotifications": settings_bool(
+                settings.value(
+                    LIMIT_RESET_NOTIFICATIONS_KEY, DEFAULT_LIMIT_RESET_NOTIFICATIONS
+                ),
+                DEFAULT_LIMIT_RESET_NOTIFICATIONS,
+            ),
+            "bankedResetNotifications": settings_bool(
+                settings.value(
+                    BANKED_RESET_NOTIFICATIONS_KEY, DEFAULT_BANKED_RESET_NOTIFICATIONS
+                ),
+                DEFAULT_BANKED_RESET_NOTIFICATIONS,
             ),
             "companionNotifications": settings_bool(
                 settings.value(
@@ -291,12 +329,28 @@ class QmlViewModel(QObject):
     weekTokens = Property(
         str, lambda self: self._values["weekTokens"], notify=dataChanged
     )
+    weekCost = Property(str, lambda self: self._values["weekCost"], notify=dataChanged)
     wallet = Property(str, lambda self: self._values["wallet"], notify=dataChanged)
     providers = Property(
         "QVariantList", lambda self: self._values["providers"], notify=dataChanged
     )
     limits = Property(
         "QVariantList", lambda self: self._values["limits"], notify=dataChanged
+    )
+    monthTrend = Property(
+        "QVariantList", lambda self: self._values["monthTrend"], notify=dataChanged
+    )
+    trendMonthLabel = Property(str, lambda self: self._values["trendMonthLabel"], notify=dataChanged)
+    trendMonthTokens = Property(str, lambda self: self._values["trendMonthTokens"], notify=dataChanged)
+    trendMonthCost = Property(str, lambda self: self._values["trendMonthCost"], notify=dataChanged)
+    trendCaption = Property(str, lambda self: self._values["trendCaption"], notify=dataChanged)
+    trendPeak = Property(str, lambda self: self._values["trendPeak"], notify=dataChanged)
+    trendCanPrevious = Property(bool, lambda self: self._values["trendCanPrevious"], notify=dataChanged)
+    trendCanNext = Property(bool, lambda self: self._values["trendCanNext"], notify=dataChanged)
+    trendLoading = Property(bool, lambda self: self._values["trendLoading"], notify=dataChanged)
+
+    growthBoost = Property(
+        bool, lambda self: self._values["growthBoost"], notify=dataChanged
     )
     collection = Property(
         "QVariantList", lambda self: self._values["collection"], notify=dataChanged
@@ -329,11 +383,17 @@ class QmlViewModel(QObject):
     rareCandyCount = Property(
         int, lambda self: self._values["rareCandyCount"], notify=dataChanged
     )
+    rareCandyXp = Property(
+        str, lambda self: self._values["rareCandyXp"], notify=dataChanged
+    )
     mintCount = Property(
         int, lambda self: self._values["mintCount"], notify=dataChanged
     )
     shinyCharmActive = Property(
         bool, lambda self: self._values["shinyCharmActive"], notify=dataChanged
+    )
+    hasActiveCompanion = Property(
+        bool, lambda self: self._values["hasActiveCompanion"], notify=dataChanged
     )
     representativeFollowsCurrent = Property(
         bool, lambda self: self._values["representativeFollowsCurrent"], notify=dataChanged
@@ -368,6 +428,12 @@ class QmlViewModel(QObject):
     )
     limitNotifications = Property(
         bool, lambda self: self._values["limitNotifications"], notify=dataChanged
+    )
+    limitResetNotifications = Property(
+        bool, lambda self: self._values["limitResetNotifications"], notify=dataChanged
+    )
+    bankedResetNotifications = Property(
+        bool, lambda self: self._values["bankedResetNotifications"], notify=dataChanged
     )
     companionNotifications = Property(
         bool, lambda self: self._values["companionNotifications"], notify=dataChanged
@@ -457,7 +523,7 @@ class QmlViewModel(QObject):
                 f"{self._tr('stage')} {mon.stage_index + 1}/{len(mon.path_ids)}"
             )
             value = mon.used_at_stage
-            target = phase_threshold(mon.rarity, len(mon.path_ids), mon.stage_index)
+            target = mon.stage_threshold
             if mon.stage_index + 1 < len(mon.path_ids):
                 next_name = self.api.localized_name(
                     mon.path_ids[mon.stage_index + 1], language
@@ -469,6 +535,7 @@ class QmlViewModel(QObject):
 
         self._values.update(
             companionName=name,
+            growthBoost=bool(state.mon and state.mon.has_growth_boost),
             companionSubtitle=subtitle,
             companionProgress=progress,
             companionProgressText=f"{compact_tokens(value)} / {compact_tokens(target)}",
@@ -479,6 +546,7 @@ class QmlViewModel(QObject):
             rareCandyCount=int(state.inventory.get("rare_candy", 0)),
             mintCount=int(state.inventory.get("mint", 0)),
             shinyCharmActive=state.shiny_charm_active,
+            hasActiveCompanion=state.mon is not None,
             representativeFollowsCurrent=state.representative_species_id is None,
             language=language,
             strings=ui_strings(language),
@@ -738,6 +806,98 @@ class QmlViewModel(QObject):
         self._render_state()
         self.dataChanged.emit()
 
+    @staticmethod
+    def _adjacent_month(key: str, step: int) -> str:
+        year, month = map(int, key.split("-"))
+        index = year * 12 + month - 1 + step
+        return f"{index // 12:04d}-{index % 12 + 1:02d}"
+
+    def _rebuild_month_trend(self) -> None:
+        if self._snapshot is None or not self._selected_month:
+            return
+        language = self._values["language"]
+        year, month = map(int, self._selected_month.split("-"))
+        is_current = self._selected_month == self._current_month
+        if is_current:
+            tokens = self._snapshot.month_daily
+            costs = self._snapshot.month_daily_cost
+            today_day = self._snapshot.scanned_at.astimezone().day if self._snapshot.scanned_at else len(tokens)
+        else:
+            tokens, costs = (self._month_history or {}).get(
+                self._selected_month, ([0] * monthrange(year, month)[1], [])
+            )
+            today_day = -1
+        days = len(tokens)
+        peak = max(tokens, default=0)
+        rows = []
+        for index, value in enumerate(tokens):
+            day = index + 1
+            date_label = QLocale({"en": "en_US", "es": "es_ES", "gl": "gl_ES"}.get(language, "en_US")).toString(
+                QDate(year, month, day), "ddd d MMM"
+            )
+            caption = self._tr("trend_day", day=date_label, tokens=compact_tokens(value))
+            if index < len(costs) and costs[index] > 0:
+                caption += f" · ${costs[index]:,.2f}"
+            rows.append({
+                "day": day, "tokens": value,
+                "barHeight": max(1.5, round(value * 34 / peak)) if peak else 1.5,
+                "label": str(day) if day == 1 or day == today_day or (
+                    not is_current and day == days
+                ) or (
+                    day % 7 == 0 and abs(day - (today_day if is_current else days)) > 3
+                ) else "",
+                "weekend": datetime(year, month, day).weekday() >= 5,
+                "today": day == today_day,
+                "empty": value == 0,
+                "caption": caption,
+            })
+        locale = QLocale({"en": "en_US", "es": "es_ES", "gl": "gl_ES"}.get(language, "en_US"))
+        month_label = locale.monthName(month, QLocale.FormatType.LongFormat)
+        self._values["monthTrend"] = rows
+        self._values["trendMonthLabel"] = f"{month_label.capitalize()} {year}"
+        self._values["trendMonthTokens"] = compact_tokens(sum(tokens))
+        self._values["trendMonthCost"] = f"${sum(costs):,.2f}"
+        self._values["trendCaption"] = rows[-1]["caption"] if rows else self._tr("trend_no_data")
+        self._values["trendPeak"] = self._tr("trend_peak", tokens=compact_tokens(peak))
+        earliest = min(self._month_history) if self._month_history else self._current_month
+        self._values["trendCanPrevious"] = (
+            not self._values["trendLoading"] and (
+                self._month_history is None or self._selected_month > earliest
+            )
+        )
+        self._values["trendCanNext"] = self._selected_month < self._current_month
+
+    @Slot(int)
+    def moveMonth(self, step: int) -> None:
+        if step not in (-1, 1) or not self._selected_month:
+            return
+        target = self._adjacent_month(self._selected_month, step)
+        if target > self._current_month:
+            return
+        if step < 0 and self._month_history is None:
+            self._pending_previous = True
+            self._values["trendLoading"] = True
+            self._rebuild_month_trend()
+            self.dataChanged.emit()
+            self.monthHistoryRequested.emit()
+            return
+        if step < 0 and (not self._month_history or target < min(self._month_history)):
+            return
+        self._selected_month = target
+        self._rebuild_month_trend()
+        self.dataChanged.emit()
+
+    def set_month_history(self, history: dict[str, tuple[list[int], list[float]]]) -> None:
+        self._month_history = history
+        self._values["trendLoading"] = False
+        if self._pending_previous and history:
+            target = self._adjacent_month(self._selected_month, -1)
+            if target >= min(history):
+                self._selected_month = target
+        self._pending_previous = False
+        self._rebuild_month_trend()
+        self.dataChanged.emit()
+
     def render(self, result: Any) -> None:
         self.state = result.state
         language = normalize_language(result.state.language)
@@ -758,21 +918,17 @@ class QmlViewModel(QObject):
                     "week": compact_tokens(usage.week_tokens),
                     "month": compact_tokens(usage.month_tokens),
                     "cost": f"${usage.today_cost:,.2f}",
-                    "error": False,
+                    "error": key in result.scan_errors,
                 }
             )
-        for key in result.scan_errors:
-            providers.append(
-                {
-                    "key": key,
-                    "name": PROVIDER_LABELS.get(key, key.title()),
-                    "today": self._tr("unavailable"),
-                    "week": "—",
-                    "month": "—",
-                    "cost": "—",
-                    "error": True,
-                }
-            )
+        self._snapshot = snapshot
+        local_now = (snapshot.scanned_at or datetime.now().astimezone()).astimezone()
+        current_month = f"{local_now.year:04d}-{local_now.month:02d}"
+        if current_month != self._current_month:
+            self._current_month = current_month
+            self._selected_month = current_month
+            self._month_history = None
+        self._rebuild_month_trend()
 
         display_mode = normalize_limit_display_mode(
             self.settings.value(LIMIT_DISPLAY_MODE_KEY, DEFAULT_LIMIT_DISPLAY_MODE)
@@ -899,6 +1055,7 @@ class QmlViewModel(QObject):
             todayTokens=compact_tokens(snapshot.today_tokens),
             todayCost=f"${snapshot.today_cost:,.2f}",
             weekTokens=compact_tokens(snapshot.week_tokens),
+            weekCost=f"${snapshot.week_cost:,.2f}",
             providers=providers,
             limits=limits,
         )
@@ -981,6 +1138,8 @@ class QmlViewModel(QObject):
             "limitTimeMode": LIMIT_TIME_MODE_KEY,
             "forecastEnabled": FORECAST_ENABLED_KEY,
             "limitNotifications": LIMIT_NOTIFICATIONS_KEY,
+            "limitResetNotifications": LIMIT_RESET_NOTIFICATIONS_KEY,
+            "bankedResetNotifications": BANKED_RESET_NOTIFICATIONS_KEY,
             "companionNotifications": COMPANION_NOTIFICATIONS_KEY,
             "warningThreshold": WARNING_THRESHOLD_KEY,
             "criticalThreshold": CRITICAL_THRESHOLD_KEY,
@@ -1126,9 +1285,25 @@ class QmlMainWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.setMinimumSize(520, 640)
         self.resize(560, 740)
+        self.settings = settings
+        self._geometry_ready = False
+        self._last_normal_rect = QRect(self.geometry())
+        self._saved_normal_rect = QRect(self.geometry())
+        self._saved_maximized = False
+        self._reapply_rect_on_show = False
+        self._geometry_timer = QTimer(self)
+        self._geometry_timer.setSingleShot(True)
+        self._geometry_timer.setInterval(250)
+        self._geometry_timer.timeout.connect(self.save_window_geometry)
 
+        self._month_history_executor: ThreadPoolExecutor | None = None
+        self._month_history_future: Future | None = None
+        self._month_history_timer = QTimer(self)
+        self._month_history_timer.setInterval(100)
+        self._month_history_timer.timeout.connect(self._poll_month_history)
         self.view_model = QmlViewModel(state, settings, api)
         self.view_model.refreshRequested.connect(self.refresh_requested)
+        self.view_model.monthHistoryRequested.connect(self._load_month_history)
         self.view_model.petVisibilityChanged.connect(self.pet_visibility_changed)
         self.view_model.petSizeChanged.connect(self.pet_size_changed)
         self.view_model.preferencesChanged.connect(self.preferences_changed)
@@ -1156,6 +1331,8 @@ class QmlMainWindow(QMainWindow):
         self.setCentralWidget(self.quick)
         self.statusBar().hide()
         self.windows_snap_enabled = _enable_windows_snap(int(self.winId()))
+        self._restore_window_geometry()
+        self._geometry_ready = True
 
         self.refresh_button = _ButtonProxy(self.view_model.set_refresh_enabled, self)
         self.refresh_status = _TextProxy(self.view_model.set_status, self)
@@ -1169,6 +1346,120 @@ class QmlMainWindow(QMainWindow):
         self.buy_uncommon_egg_btn = _ButtonProxy(parent=self)
         self.buy_rare_egg_btn = _ButtonProxy(parent=self)
 
+    def _load_month_history(self) -> None:
+        if self._month_history_future is not None:
+            return
+        self._month_history_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="poketokenbar-history")
+        self._month_history_future = self._month_history_executor.submit(scan_month_history)
+        self._month_history_timer.start()
+
+    def _poll_month_history(self) -> None:
+        future = self._month_history_future
+        if future is None or not future.done():
+            return
+        self._month_history_timer.stop()
+        try:
+            history = future.result()
+        except Exception:  # noqa: BLE001  # restore navigation if a log is unreadable
+            history = {}
+        self._month_history_future = None
+        self.view_model.set_month_history(history)
+        if self._month_history_executor is not None:
+            self._month_history_executor.shutdown(wait=False)
+            self._month_history_executor = None
+
+    def _restore_window_geometry(self) -> None:
+        rect = self.settings.value("main_window_rect")
+        if isinstance(rect, QRect) and rect.isValid():
+            self._last_normal_rect = QRect(rect)
+            self._saved_normal_rect = QRect(rect)
+            self.setGeometry(rect)
+            self._saved_maximized = settings_bool(
+                self.settings.value("main_window_maximized", False), False
+            )
+            if self._saved_maximized:
+                self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+            self._reapply_rect_on_show = True
+        else:
+            saved = self.settings.value("main_window_geometry")
+            if saved and self.restoreGeometry(saved):
+                self._last_normal_rect = QRect(self.normalGeometry())
+                self._saved_normal_rect = QRect(self._last_normal_rect)
+                self._saved_maximized = self.isMaximized()
+                self._reapply_rect_on_show = True
+        visible = any(
+            screen.availableGeometry().intersects(self._saved_normal_rect)
+            for screen in QGuiApplication.screens()
+        )
+        if not visible:
+            screen = QGuiApplication.primaryScreen()
+            if screen is not None:
+                area = screen.availableGeometry()
+                normal = self._saved_normal_rect
+                self.setGeometry(
+                    area.x() + max(0, (area.width() - normal.width()) // 2),
+                    area.y() + max(0, (area.height() - normal.height()) // 2),
+                    normal.width(),
+                    normal.height(),
+                )
+                self._last_normal_rect = QRect(self.geometry())
+                self._saved_normal_rect = QRect(self._last_normal_rect)
+
+    def save_window_geometry(self) -> None:
+        if not self._geometry_ready:
+            return
+        if self.isVisible():
+            maximized = self.isMaximized()
+            normal = (
+                QRect(self._last_normal_rect)
+                if maximized or self.isMinimized()
+                else QRect(self.geometry())
+            )
+            if not maximized and not self.isMinimized():
+                self._last_normal_rect = QRect(normal)
+            self._saved_maximized = maximized
+            self.settings.setValue("main_window_geometry", self.saveGeometry())
+        else:
+            # Hiding a snapped window can expose its previous unsnapped geometry.
+            normal = QRect(self._saved_normal_rect)
+            maximized = self._saved_maximized
+        if normal.isValid():
+            self._saved_normal_rect = QRect(normal)
+            self.settings.setValue("main_window_rect", normal)
+        self.settings.setValue("main_window_maximized", maximized)
+        self.settings.sync()
+
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        if self._geometry_ready and self.isVisible():
+            if not self.isMaximized() and not self.isMinimized():
+                self._last_normal_rect = QRect(self.geometry())
+            self._geometry_timer.start()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._geometry_ready and self.isVisible():
+            if not self.isMaximized() and not self.isMinimized():
+                self._last_normal_rect = QRect(self.geometry())
+            self._geometry_timer.start()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._geometry_ready and self._reapply_rect_on_show:
+            self._reapply_rect_on_show = False
+            rect = QRect(self._saved_normal_rect)
+            QTimer.singleShot(0, lambda: self._apply_saved_window_rect(rect))
+
+    def _apply_saved_window_rect(self, rect: QRect) -> None:
+        if (
+            self.isVisible()
+            and not self.isMaximized()
+            and not self.isMinimized()
+            and rect.isValid()
+        ):
+            self.setGeometry(rect)
+            self._last_normal_rect = QRect(rect)
+
     def _sync_window_state(self) -> None:
         self.view_model._set("windowMaximized", self.isMaximized())
 
@@ -1176,6 +1467,7 @@ class QmlMainWindow(QMainWindow):
         if self.isMaximized():
             self.showNormal()
         else:
+            self._last_normal_rect = QRect(self.geometry())
             self.showMaximized()
         QTimer.singleShot(0, self._sync_window_state)
 
@@ -1190,8 +1482,15 @@ class QmlMainWindow(QMainWindow):
             handle.startSystemResize(Qt.Edge(edges))
 
     def changeEvent(self, event) -> None:
+        was_maximized = (
+            event.type() == QEvent.Type.WindowStateChange
+            and bool(event.oldState() & Qt.WindowState.WindowMaximized)
+        )
         super().changeEvent(event)
         if event.type() == QEvent.Type.WindowStateChange:
+            if was_maximized and not self.isMaximized() and not self.isMinimized():
+                normal = QRect(self._last_normal_rect)
+                QTimer.singleShot(0, lambda: self.setGeometry(normal))
             QTimer.singleShot(0, self._sync_window_state)
 
     def set_state(self, state: GameState) -> None:
@@ -1225,5 +1524,8 @@ class QmlMainWindow(QMainWindow):
         QTimer.singleShot(1200, lambda: self.view_model.set_reveal(False))
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._geometry_timer.stop()
+        self.save_window_geometry()
+        self._reapply_rect_on_show = True
         event.ignore()
         self.hide()
