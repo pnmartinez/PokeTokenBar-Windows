@@ -12,9 +12,11 @@ from pathlib import Path
 from uuid import uuid4
 
 AUTO_NAME = re.compile(
-    r"^state-backup-(daily|limit)-(\d{8}-\d{6}-\d{6}[+-]\d{4})-[0-9a-f]{8}\.json$"
+    r"^state-backup-(daily|limit)-(?:(\d{8}-\d{6})(?:-([2-9]\d*))?"
+    r"|(\d{8}-\d{6}-\d{6}[+-]\d{4})-[0-9a-f]{8})\.json$"
 )
-STAMP_FORMAT = "%Y%m%d-%H%M%S-%f%z"
+STAMP_FORMAT = "%Y%m%d-%H%M%S"
+LEGACY_STAMP_FORMAT = "%Y%m%d-%H%M%S-%f%z"
 AUTOMATIC_KINDS = frozenset({"daily", "limit"})
 ALL_KINDS = AUTOMATIC_KINDS | {"manual", "before-import", "imported"}
 
@@ -29,11 +31,19 @@ def backup_filename(kind: str, when: datetime | None = None) -> str:
     moment = when or local_now()
     if moment.tzinfo is None:
         raise ValueError("Backup timestamps must include a timezone")
-    return f"state-backup-{kind}-{moment.strftime(STAMP_FORMAT)}-{uuid4().hex[:8]}.json"
+    return f"state-backup-{kind}-{moment.strftime(STAMP_FORMAT)}.json"
 
 
 def backup_path(state_path: Path, kind: str, when: datetime | None = None) -> Path:
-    return state_path.with_name(backup_filename(kind, when))
+    first = state_path.with_name(backup_filename(kind, when))
+    if not first.exists():
+        return first
+    number = 2
+    while True:
+        candidate = first.with_name(f"{first.stem}-{number}{first.suffix}")
+        if not candidate.exists():
+            return candidate
+        number += 1
 
 
 @contextmanager
@@ -96,14 +106,18 @@ def _valid_snapshot(path: Path) -> bool:
     )
 
 
-def _automatic_files(folder: Path) -> list[tuple[Path, str, datetime]]:
+def _automatic_files(folder: Path, current_tz) -> list[tuple[Path, str, datetime]]:
     results = []
     for path in folder.iterdir():
         match = AUTO_NAME.fullmatch(path.name)
         if match is None or not path.is_file() or not _valid_snapshot(path):
             continue
         try:
-            moment = datetime.strptime(match.group(2), STAMP_FORMAT)
+            moment = (
+                datetime.strptime(match.group(2), STAMP_FORMAT).replace(tzinfo=current_tz)
+                if match.group(2)
+                else datetime.strptime(match.group(4), LEGACY_STAMP_FORMAT)
+            )
         except ValueError:
             continue
         results.append((path, match.group(1), moment))
@@ -114,7 +128,7 @@ def has_automatic_backup_today(state_path: Path, when: datetime | None = None) -
     moment = when or local_now()
     return any(
         saved_at.date() == moment.date()
-        for _, _, saved_at in _automatic_files(state_path.parent)
+        for _, _, saved_at in _automatic_files(state_path.parent, moment.tzinfo)
     )
 
 
@@ -122,10 +136,10 @@ def prune_automatic_backups(state_path: Path, when: datetime | None = None) -> l
     """Keep dense recent history, then daily, weekly, and monthly checkpoints.
 
     Only known automatic filenames containing valid saves are eligible for deletion.
-    Manual, pre-import, legacy, and unrecognized files are never touched.
+    Manual, import, one-off legacy, and unrecognized files are never touched.
     """
     moment = when or local_now()
-    files = sorted(_automatic_files(state_path.parent), key=lambda item: (item[2], item[0].name), reverse=True)
+    files = sorted(_automatic_files(state_path.parent, moment.tzinfo), key=lambda item: (item[2], item[0].name), reverse=True)
     chosen: set[tuple[object, ...]] = set()
     removed: list[Path] = []
     for path, _, saved_at in files:

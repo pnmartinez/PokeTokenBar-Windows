@@ -37,6 +37,38 @@ class BackupTests(unittest.TestCase):
             self.assertIsNotNone(ensure_daily_backup(state_path, EMPTY_SAVE, tomorrow))
             self.assertEqual(len(list(Path(folder).glob("state-backup-*.json"))), 3)
 
+    def test_short_names_and_same_second_collisions_never_overwrite(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state_path = Path(folder) / "state.json"
+            daily = write_backup(state_path, "daily", EMPTY_SAVE, NOW)
+            second = write_backup(state_path, "daily", EMPTY_SAVE, NOW)
+            third = write_backup(state_path, "daily", EMPTY_SAVE, NOW)
+            self.assertEqual(daily.name, "state-backup-daily-20260923-120000.json")
+            self.assertEqual(second.name, "state-backup-daily-20260923-120000-2.json")
+            self.assertEqual(third.name, "state-backup-daily-20260923-120000-3.json")
+            for kind in ("limit", "manual", "before-import", "imported"):
+                first = write_backup(state_path, kind, EMPTY_SAVE, NOW)
+                repeated = write_backup(state_path, kind, EMPTY_SAVE, NOW)
+                self.assertEqual(first.name, f"state-backup-{kind}-20260923-120000.json")
+                self.assertEqual(repeated.name, f"state-backup-{kind}-20260923-120000-2.json")
+                self.assertTrue(first.exists())
+                self.assertTrue(repeated.exists())
+            self.assertTrue(all(path.exists() for path in (daily, second, third)))
+
+    def test_previous_name_format_is_still_pruned_but_renamed_files_are_not(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state_path = Path(folder) / "state.json"
+            old_format = Path(folder) / (
+                "state-backup-daily-20250819-120000-123456+0200-a1b2c3d4.json"
+            )
+            old_format.write_text(EMPTY_SAVE, encoding="utf-8")
+            renamed = Path(folder) / "state-backup-daily-keep-forever.json"
+            renamed.write_text(EMPTY_SAVE, encoding="utf-8")
+            current = write_backup(state_path, "daily", EMPTY_SAVE, NOW)
+            self.assertTrue(current.exists())
+            self.assertFalse(old_format.exists())
+            self.assertTrue(renamed.exists())
+
     def test_corrupt_backup_cannot_suppress_daily_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:
             state_path = Path(folder) / "state.json"

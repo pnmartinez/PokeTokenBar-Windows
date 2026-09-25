@@ -881,7 +881,7 @@ class UITests(unittest.TestCase):
         def use_suggestion(_window, title, suggested, _filter):
             self.assertEqual(title, "Exportar Backup")
             self.assertEqual(Path(suggested).parent, state_path.parent)
-            self.assertRegex(Path(suggested).name, r"^state-backup-manual-\d{8}-")
+            self.assertRegex(Path(suggested).name, r"^state-backup-manual-\d{8}-\d{6}(?:-\d+)?\.json$")
             return suggested, ""
 
         with patch("poketokenbar_windows.ui.QFileDialog.getSaveFileName", side_effect=use_suggestion):
