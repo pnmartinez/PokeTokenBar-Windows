@@ -75,3 +75,12 @@ Use the equivalent active Python environment on other platforms. Document any ch
 - After a PR is merged, verify that its branch has no unmerged work, dependent PR, or worktree still in use. Then delete the remote branch and its local branch/worktree. Record the branch tip SHA before deletion. With a merge commit it stays reachable from master; with squash or rebase, preserve a tag first if that exact pre-merge tip must remain recoverable.
 - Prefer GitHub's **Automatically delete head branches** repository setting when an administrator enables it. It deletes merged PR head branches in this repository; branch protection or repository rules can prevent deletion. If a recurring branch becomes a PR head, protect it or revisit this setting. The setting does not clean local tracking refs, local branches, or worktrees.
 - Do not delete a closed but unmerged branch merely because its PR is closed. Preserve the existing coordination rule for any branch that may contain active work.
+
+## Local build retention
+
+- Use scripts/build-exe.ps1 for local EXE builds. It writes the latest local master build to dist/PokeTokenBar-Windows and reuses one dist/branches/<branch-slot>/PokeTokenBar-Windows directory per active branch across worktrees.
+- PyInstaller work files and its generated spec live in a staging directory during scripts/build-exe.ps1 and are removed after the build. Do not keep dated or PR-named PyInstaller caches under build/. Review QA reports and Git worktrees separately before deleting them.
+- Do not create date-, commit-, or PR-named full copies in dist by default. Keep an older comparison build only when explicitly needed; record why and remove it after that comparison.
+- After a merge, update local master, build and verify its EXE, then remove the merged branch build. A successful local master build runs scripts/prune-dist.ps1 -Apply to remove managed builds whose branches are merged. It leaves unrecognized folders untouched.
+- Before calling a local build the latest version, compare its build-info.json commit with the relevant branch tip. GitHub Actions artifacts do not automatically update this machine's dist.
+- Never remove an installed application or user save data as part of build cleanup.
