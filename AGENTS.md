@@ -73,5 +73,5 @@ Use the equivalent active Python environment on other platforms. Document any ch
 
 - Keep master, branches with active unmerged work, and any deliberately maintained recurring branch with a documented purpose and owner.
 - After a PR is merged, verify that its branch has no unmerged work, dependent PR, or worktree still in use. Then delete the remote branch and its local branch/worktree. Record the branch tip SHA before deletion. With a merge commit it stays reachable from master; with squash or rebase, preserve a tag first if that exact pre-merge tip must remain recoverable.
-- Prefer GitHub's **Automatically delete head branches** repository setting when an administrator enables it. That setting handles remote PR branches only; still prune local tracking refs, local branches, and worktrees after checking for active work.
+- Prefer GitHub's **Automatically delete head branches** repository setting when an administrator enables it. It deletes merged PR head branches in this repository; branch protection or repository rules can prevent deletion. If a recurring branch becomes a PR head, protect it or revisit this setting. The setting does not clean local tracking refs, local branches, or worktrees.
 - Do not delete a closed but unmerged branch merely because its PR is closed. Preserve the existing coordination rule for any branch that may contain active work.
