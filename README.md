@@ -50,7 +50,7 @@ GitHub Actions builds a Windows artifact containing `PokeTokenBar-Windows.exe`. 
 
 The Start automatically with Windows setting registers a tray-only launch: the main window stays closed until opened from the tray or desktop pet. The floating pet follows its saved visibility setting. An interactive EXE launch opens the main window. An existing startup registration is upgraded to tray-only mode only when it points to that same executable.
 
-Quit an existing instance from its tray menu before launching another build. Builds use the same save and settings by default and do not coordinate concurrent writes. Set `PTB_STATE_DIR` to a separate folder to test another instance with an isolated save and settings.
+Builds share the same save and settings by default. Current builds refuse a second instance using the same save folder; older builds do not use this guard. To compare two builds without closing the normal app, use the included `Probar-en-paralelo.cmd` launcher described under Save backups.
 
 ### From source
 
@@ -78,6 +78,30 @@ Build the standalone Windows directory with PyInstaller:
 ```
 
 The result is `dist\PokeTokenBar-Windows\PokeTokenBar-Windows.exe`.
+
+## Save backups
+
+The active game is `%APPDATA%\PokeTokenBar-Windows\state.json`. Its backups live in the same folder. In Settings, **Exportar Backup** opens that folder and suggests a filename; **Importar Backup** opens the folder to select a JSON file. The same controls read **Export Backup** / **Import Backup** in English. An export includes game progress and inventory. Display preferences are stored separately in Windows settings.
+
+New backup names use local time to the second: `state-backup-<kind>-YYYYMMDD-HHMMSS.json`, for example `state-backup-daily-20260925-143012.json`. If the same kind is saved again within that second, the app keeps both by adding `-2`, `-3`, etc. This applies to **all** kinds. Older names with microseconds, timezone and a random suffix remain readable and subject to their original retention rules. The random suffix still used for temporary files during atomic writes is never part of a backup filename.
+
+| Kind | When created | Automatic deletion |
+| --- | --- | --- |
+| `daily` | First use on a local day: before refreshing an existing save or after the first successful new save | Yes |
+| `limit` | A measured usage limit changes from below full to full | Yes |
+| `manual` | **Exportar Backup** | Never |
+| `before-import` | Immediately before **Importar Backup** replaces the active save | Never |
+| `imported` | A copy of the imported data, made before it replaces the active save | Never |
+
+When a new automatic backup is written, the app cleans **only recognized, valid `daily` and `limit` files**. It keeps every automatic backup from the last 48 hours. From then through day 7 it keeps the newest per local day; through day 35, the newest per ISO week; and up to 12 calendar months, the newest per calendar month. It removes older recognized automatic backups. Days without app use have no backup. Cleanup happens when another automatic backup is created, so an expired file can remain until the next use.
+
+Manual and import backups do not expire. A renamed file whose name no longer matches the automatic pattern is also left alone; for example `A-mina-partida-20260925.json`. A valid file renamed to an automatic `daily` or `limit` name **does** become eligible for cleanup. Unknown, legacy one-off files such as `state-backup.json`, invalid JSON, and `state-recovery.json` are not deleted by this retention policy. The app refuses to overwrite an unreadable active save with an empty game.
+
+### Try two versions at once
+
+Two current versions cannot share one save folder while running: the second launch shows a warning. An older version does not hold this lock, so an old and a new EXE may still open together on the default folder and overwrite each other's progress. For a parallel test, leave the normal app open and double-click **`Probar-en-paralelo.cmd`** beside the test EXE. The test instance uses `%APPDATA%\PokeTokenBar-Windows-Test` for its save, backups and settings, and `%LOCALAPPDATA%\PokeTokenBar-Windows-Test\Cache` for its cache. The build script puts this launcher next to the EXE.
+
+The test starts with its own game. If the normal app has **Exportar Backup**, export there and import that file into the test app. If the normal app is an older build without this control, close it, copy its `state.json` with File Explorer to a safe location, reopen it, then import that copy into the test app. Changes in the test game never reach the normal game automatically. To keep test progress, export from the test app and import into the normal app **after installing a build with Importar Backup** and closing the test app. The auto-start preference controls the shared Windows login registration, so leave it alone during parallel tests. No command line or system clock change is needed; retention by elapsed days is covered by automated tests.
 
 ## Local data sources
 

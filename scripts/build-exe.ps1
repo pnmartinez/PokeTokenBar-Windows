@@ -62,4 +62,6 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "PyInstaller completed without producing $executable."
 }
 
+Copy-Item -LiteralPath (Join-Path $root "scripts\Probar-en-paralelo.cmd") -Destination (Join-Path $root "dist\PokeTokenBar-Windows\Probar-en-paralelo.cmd")
+
 Write-Host "Built: dist\PokeTokenBar-Windows\PokeTokenBar-Windows.exe"

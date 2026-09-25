@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
@@ -349,6 +350,32 @@ class StateTests(unittest.TestCase):
             loaded = store.load()
             self.assertEqual(loaded.egg_usage, 123)
             self.assertEqual(loaded.used_since_install, 456)
+
+    def test_parallel_saves_keep_valid_state_and_highest_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+
+            def save(value: int) -> None:
+                StateStore(path).save(GameState(used_since_install=value))
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                list(executor.map(save, range(16)))
+
+            self.assertEqual(json.loads(
+                (Path(tmp) / "state-recovery.json").read_text(encoding="utf-8")
+            )["used_since_install"], 15)
+            self.assertIn(json.loads(path.read_text(encoding="utf-8"))["used_since_install"], range(16))
+            self.assertFalse(list(Path(tmp).glob("*.tmp")))
+
+    def test_recovery_copy_survives_a_stale_empty_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(Path(tmp) / "state.json")
+            caught = CatchRecord(3, 1, [1, 2, 3], "common", False, "Hardy", "2026-09-01")
+            store.save(GameState(catches=[caught], used_since_install=10_000_000))
+            store.save(GameState(egg_usage=123, used_since_install=123))
+            recovered = StateStore(Path(tmp) / "state-recovery.json").load()
+            self.assertEqual(len(recovered.catches), 1)
+            self.assertEqual(recovered.used_since_install, 10_000_000)
 
 
 class WindowsIntegrationTests(unittest.TestCase):
@@ -899,9 +926,29 @@ class RepeatGrowthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             store = StateStore(Path(folder) / "state.json")
             store.save(state)
+            saved = json.loads(store.path.read_text(encoding="utf-8"))
+            self.assertNotIn("has_growth_boost", saved["mon"])
+            self.assertTrue(saved["active_has_growth_boost"])
             restored = store.load()
         self.assertTrue(restored.mon.has_growth_boost)
         self.assertEqual(restored.mon.stage_threshold, state.mon.stage_threshold)
+
+    def test_repeat_boost_survives_older_release_rewriting_save(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            state = GameState(catches=[CatchRecord(
+                3, 1, [1, 2, 3], "common", False, "Hardy", "2026-09-01"
+            )])
+            apply_usage(state, EGG_HATCH_THRESHOLD, FakeAPI())
+            store = StateStore(path)
+            store.save(state)
+            old_release_save = json.loads(path.read_text(encoding="utf-8"))
+            old_release_save.pop("active_has_growth_boost")
+            path.write_text(json.dumps(old_release_save), encoding="utf-8")
+            self.assertTrue(store.load().mon.has_growth_boost)
+            old_release_save["mon"]["has_growth_boost"] = True
+            path.write_text(json.dumps(old_release_save), encoding="utf-8")
+            self.assertTrue(store.load().mon.has_growth_boost)
 
     def test_discarded_unfinished_catch_does_not_unlock_boost(self):
         state = GameState(

@@ -4,7 +4,8 @@ import ctypes
 import os
 import sys
 
-from .windows import APP_NAME, refresh_autostart_registration
+from .instance import InstanceAlreadyRunning, exclusive_state_instance
+from .windows import APP_NAME, refresh_autostart_registration, state_dir
 
 
 def _configure_windows_identity() -> None:
@@ -40,7 +41,7 @@ def main() -> int:
     _hide_console_window()
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QGuiApplication
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QMessageBox
 
     from .ui import TrayController, application_icon
 
@@ -56,14 +57,26 @@ def main() -> int:
     app.setOrganizationName("PokeTokenBar")
     app.setQuitOnLastWindowClosed(False)
 
-    controller = TrayController(app)
-    # Interactive launches request the window after the first real snapshot.
-    # The Windows login entry keeps the application in the tray.
-    if not background_launch:
-        controller.show_window()
+    try:
+        with exclusive_state_instance(state_dir() / "state.json"):
+            controller = TrayController(app)
+            # Interactive launches request the window after the first real snapshot.
+            # The Windows login entry keeps the application in the tray.
+            if not background_launch:
+                controller.show_window()
 
-    app._poketokenbar_controller = controller  # keep QObject graph alive
-    return app.exec()
+            app._poketokenbar_controller = controller  # keep QObject graph alive
+            return app.exec()
+    except InstanceAlreadyRunning:
+        if not background_launch:
+            QMessageBox.warning(
+                None,
+                APP_NAME,
+                "PokeTokenBar is already using this save folder. Open the existing "
+                "window from the tray. To test another build, set PTB_STATE_DIR "
+                "to a separate folder.",
+            )
+        return 0
 
 
 if __name__ == "__main__":

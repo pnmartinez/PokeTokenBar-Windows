@@ -6,6 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from .backups import atomic_write, ensure_daily_backup, save_lock, write_backup
 from .pokemon import (
     EGG_HATCH_THRESHOLD,
     MINT_PRICE,
@@ -212,18 +213,32 @@ class StateStore:
     def __init__(self, path: Path | None = None):
         self.path = path or state_dir() / "state.json"
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.last_backup_error: str | None = None
+        self.load_error: str | None = None
 
-    def load(self) -> GameState:
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return GameState()
-        if not isinstance(raw, dict):
-            return GameState()
+    @staticmethod
+    def parse_state(raw: dict[str, Any]) -> GameState:
+        if (
+            not isinstance(raw, dict)
+            or not any(key in raw for key in ("catches", "mon", "egg_usage"))
+            or not isinstance(raw.get("catches", []), list)
+            or any(not isinstance(item, dict) for item in raw.get("catches", []))
+            or (raw.get("mon") is not None and not isinstance(raw.get("mon"), dict))
+            or not isinstance(raw.get("inventory", {}), dict)
+        ):
+            raise ValueError("Invalid PokeTokenBar save")
         try:
             mon_raw = raw.get("mon")
-            mon = MonState(**mon_raw) if isinstance(mon_raw, dict) else None
+            mon_fields = dict(mon_raw) if isinstance(mon_raw, dict) else None
+            legacy_growth_boost = mon_fields.pop("has_growth_boost", None) if mon_fields else None
+            mon = MonState(**mon_fields) if mon_fields is not None else None
             catches = [CatchRecord(**item) for item in raw.get("catches", []) if isinstance(item, dict)]
+            if mon is not None:
+                stored_boost = raw.get("active_has_growth_boost", legacy_growth_boost)
+                mon.has_growth_boost = (
+                    bool(stored_boost) if stored_boost is not None
+                    else sum(catch.base_id == mon.base_id for catch in catches) > 1
+                )
             representative_raw = raw.get("representative_species_id")
             try:
                 representative_species_id = int(representative_raw) if representative_raw is not None else None
@@ -259,13 +274,92 @@ class StateStore:
                 state.inventory.setdefault(key, 0)
             normalize_representative(state)
             return state
-        except (TypeError, ValueError, AttributeError):
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("Invalid PokeTokenBar save") from exc
+
+    @staticmethod
+    def serialize_state(state: GameState) -> str:
+        payload = asdict(state)
+        if payload["mon"] is not None:
+            # Older releases reject unknown fields inside "mon" and load a new game.
+            # They safely ignore unknown fields at the top level.
+            payload["active_has_growth_boost"] = payload["mon"].pop("has_growth_boost")
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    def load(self) -> GameState:
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            state = self.parse_state(raw)
+        except FileNotFoundError:
+            self.load_error = None
             return GameState()
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            self.load_error = f"{type(exc).__name__}: {exc}"
+            return GameState()
+        self.load_error = None
+        return state
+
+    def ensure_daily_on_open(self) -> None:
+        if self.load_error is not None or not self.path.exists():
+            return
+        with save_lock(self.path):
+            try:
+                ensure_daily_backup(self.path, self.path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                self.last_backup_error = str(exc)
+            else:
+                self.last_backup_error = None
 
     def save(self, state: GameState) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(asdict(state), indent=2, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(self.path)
+        if self.load_error is not None:
+            raise ValueError(f"Refusing to overwrite unreadable save: {self.load_error}")
+        serialized = self.serialize_state(state)
+        payload = json.loads(serialized)
+        with save_lock(self.path):
+            recovery = self.path.with_name("state-recovery.json")
+            try:
+                previous = json.loads(recovery.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                previous = None
+            if isinstance(previous, dict) and (
+                not isinstance(previous.get("catches"), list)
+                or not isinstance(previous.get("used_since_install"), int)
+            ):
+                previous = None
+            if not isinstance(previous, dict) or (
+                len(payload["catches"]) >= len(previous["catches"])
+                and payload["used_since_install"] >= previous["used_since_install"]
+            ):
+                atomic_write(recovery, serialized)
+
+            atomic_write(self.path, serialized)
+            try:
+                ensure_daily_backup(self.path, serialized)
+            except (OSError, ValueError) as exc:
+                self.last_backup_error = str(exc)
+            else:
+                self.last_backup_error = None
+
+    def backup_limit_event(self, state: GameState) -> Path:
+        serialized = self.serialize_state(state)
+        with save_lock(self.path):
+            return write_backup(self.path, "limit", serialized)
+
+    def import_payload(self, raw: dict[str, Any]) -> GameState:
+        imported = self.parse_state(raw)
+        serialized = json.dumps(raw, indent=2, ensure_ascii=False)
+        with save_lock(self.path):
+            if self.path.exists():
+                previous = self.path.read_text(encoding="utf-8")
+                try:
+                    write_backup(self.path, "before-import", previous)
+                except ValueError:
+                    # The invalid original is still preserved by write_backup.
+                    pass
+            write_backup(self.path, "imported", serialized)
+            atomic_write(self.path, serialized)
+        self.load_error = None
+        return imported
 
 
 def usage_delta(
