@@ -79,6 +79,8 @@ Build the standalone Windows directory with PyInstaller:
 
 The result from master is `dist\PokeTokenBar-Windows\PokeTokenBar-Windows.exe`. Local builds from a feature branch go to a stable slot under `dist\branches\<branch-slot>\PokeTokenBar-Windows` and replace that branch's previous build. Git worktrees share these slots. Each build includes `build-info.json` with its source branch and commit.
 
+PyInstaller keeps its analysis files and generated spec in temporary staging while building; successful runs leave no PyInstaller cache in build/. Git worktrees and QA reports placed there are separate files and are never deleted by the build script.
+
 After merging a PR, update local master and run the build script there. It replaces the main build only after a successful build, then removes managed builds for branches already merged into master. GitHub Actions also builds an artifact for every push, but that artifact does not update the local dist directory.
 
 ## Save backups

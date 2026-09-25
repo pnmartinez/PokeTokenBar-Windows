@@ -76,13 +76,14 @@ if ($LASTEXITCODE -ne 0) {
     throw "Failed to install PokeTokenBar build dependencies."
 }
 
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $root "build\PokeTokenBar-Windows")
 New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
 try {
     $pyInstallerArgs = @(
         "--noconfirm", "--clean", "--windowed", "--onedir",
         "--name", "PokeTokenBar-Windows",
         "--distpath", $stagingRoot,
+        "--workpath", (Join-Path $stagingRoot ".work"),
+        "--specpath", $stagingRoot,
         "--paths", (Join-Path $root "src"),
         "--add-data", "$(Join-Path $root 'src\poketokenbar_windows\qml');poketokenbar_windows\qml",
         "--collect-all", "PySide6",
