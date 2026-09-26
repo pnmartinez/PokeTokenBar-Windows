@@ -59,4 +59,3 @@ def build_identity(
         return BuildIdentity(__version__, "", False)
     tags = _git(root, "tag", "--points-at", "HEAD", "--list", f"v{__version__}").splitlines()
     return BuildIdentity(__version__, commit, f"v{__version__}" in tags)
-

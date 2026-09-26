@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from poketokenbar_windows import __version__
 from poketokenbar_windows.limits import _codex_request_lines
@@ -13,13 +14,15 @@ from scripts.write_version_info import version_resource
 
 
 class VersionTests(unittest.TestCase):
-    def test_source_checkout_is_identified_as_development_build(self):
-        identity = build_identity()
-        self.assertEqual(identity.version, __version__)
-        self.assertFalse(identity.release)
-        self.assertIn("-dev", identity.label)
-        self.assertEqual(len(identity.commit), 40)
-        self.assertIn(identity.commit[:7], identity.label)
+    def test_exact_matching_tag_controls_release_identity(self):
+        with patch("poketokenbar_windows.version._git", side_effect=["a" * 40, ""]):
+            development = build_identity(source_root=Path("unused"))
+        with patch("poketokenbar_windows.version._git", side_effect=["a" * 40, f"v{__version__}"]):
+            release = build_identity(source_root=Path("unused"))
+        self.assertEqual(development.label, f"v{__version__}-dev · aaaaaaa")
+        self.assertEqual(release.label, f"v{__version__}")
+        self.assertFalse(development.release)
+        self.assertTrue(release.release)
 
     def test_manifest_release_and_development_labels(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -48,4 +51,3 @@ class VersionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
