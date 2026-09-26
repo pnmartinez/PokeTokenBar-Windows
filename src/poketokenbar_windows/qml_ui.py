@@ -66,6 +66,8 @@ from .pokemon import (
 )
 from .state import GameState, companion_progress_percent, owned_representative_options
 from .usage import PROVIDER_LABELS, scan_month_history
+from .updates import UpdateState
+from .version import build_identity
 from .windows import APP_NAME, autostart_enabled, set_autostart
 
 
@@ -159,6 +161,8 @@ class QmlViewModel(QObject):
     windowMoveRequested = Signal()
     windowResizeRequested = Signal(int)
     monthHistoryRequested = Signal()
+    checkUpdatesRequested = Signal()
+    openReleaseRequested = Signal()
 
     def __init__(self, state: GameState, settings: QSettings, api: PokeAPIClient):
         super().__init__()
@@ -174,10 +178,17 @@ class QmlViewModel(QObject):
         self._dex_filter = "all"
         self._dex_shiny_by_species: dict[int, bool] = {}
         language = normalize_language(state.language)
+        identity = build_identity()
         self._values: dict[str, Any] = {
             "loading": True,
             "refreshEnabled": False,
             "statusText": translated_text(language, "loading"),
+            "dataStatus": "loading",
+            "versionShort": f"v{identity.version}" + ("" if identity.release else "-dev"),
+            "buildVersion": identity.label,
+            "updateStatus": "idle",
+            "latestVersion": "",
+            "latestReleaseUrl": "",
             "feedbackText": "",
             "toastText": "",
             "toastShiny": False,
@@ -287,6 +298,12 @@ class QmlViewModel(QObject):
     statusText = Property(
         str, lambda self: self._values["statusText"], notify=dataChanged
     )
+    dataStatus = Property(str, lambda self: self._values["dataStatus"], notify=dataChanged)
+    versionShort = Property(str, lambda self: self._values["versionShort"], notify=dataChanged)
+    buildVersion = Property(str, lambda self: self._values["buildVersion"], notify=dataChanged)
+    updateStatus = Property(str, lambda self: self._values["updateStatus"], notify=dataChanged)
+    latestVersion = Property(str, lambda self: self._values["latestVersion"], notify=dataChanged)
+    latestReleaseUrl = Property(str, lambda self: self._values["latestReleaseUrl"], notify=dataChanged)
     feedbackText = Property(
         str, lambda self: self._values["feedbackText"], notify=dataChanged
     )
@@ -1052,6 +1069,7 @@ class QmlViewModel(QObject):
             loading=False,
             refreshEnabled=True,
             statusText=self._tr(status_key) + (f" · {stamp}" if stamp else ""),
+            dataStatus="warning" if result.scan_errors else "ok",
             todayTokens=compact_tokens(snapshot.today_tokens),
             todayCost=f"${snapshot.today_cost:,.2f}",
             weekTokens=compact_tokens(snapshot.week_tokens),
@@ -1073,7 +1091,28 @@ class QmlViewModel(QObject):
             "Updating…": "status_updating",
             "Update failed · retry scheduled": "status_failed",
         }
-        self._set("statusText", self._tr(known[text]) if text in known else text)
+        self._values["statusText"] = self._tr(known[text]) if text in known else text
+        if text == "Update failed · retry scheduled":
+            self._values["dataStatus"] = "error"
+        elif text == "Data is stale · refreshing…":
+            self._values["dataStatus"] = "warning"
+        elif text == "Updating…":
+            self._values["dataStatus"] = "loading"
+        self.dataChanged.emit()
+
+    def set_update_state(self, state: UpdateState) -> None:
+        self._values["updateStatus"] = state.status
+        self._values["latestVersion"] = state.version
+        self._values["latestReleaseUrl"] = state.url
+        self.dataChanged.emit()
+
+    @Slot()
+    def checkUpdates(self) -> None:
+        self.checkUpdatesRequested.emit()
+
+    @Slot()
+    def openRelease(self) -> None:
+        self.openReleaseRequested.emit()
 
     def show_feedback(self, text: str) -> None:
         self._set("feedbackText", text)
