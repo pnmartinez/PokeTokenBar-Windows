@@ -22,3 +22,5 @@ Variants: current header; fixed footer with About as the last Settings section; 
 | 520x640 config-abaixo | ![](current-520x640-config-abaixo.png) | ![](section-520x640-config-abaixo.png) | ![](dialog-520x640-config-abaixo.png) |
 
 Footer with commit: [560 × 740](section-560x740-inicio-commit.png), [520 × 640](section-520x640-inicio-commit.png).
+
+Dialog entry point (closed): [560 × 740](dialog-560x740-config-abaixo-pechado.png), [520 × 640](dialog-520x640-config-abaixo-pechado.png).
