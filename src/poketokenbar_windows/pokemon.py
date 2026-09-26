@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import __version__
+
 EGG_HATCH_THRESHOLD = 5_000_000
 GRADUATION_TOTALS = {
     "common": 750_000_000,
@@ -98,7 +100,7 @@ class PokeAPIClient:
                     return data
             except (OSError, json.JSONDecodeError):
                 pass
-        request = urllib.request.Request(url, headers={"User-Agent": "PokeTokenBar-Windows/0.1", "Accept": "application/json"})
+        request = urllib.request.Request(url, headers={"User-Agent": f"PokeTokenBar-Windows/{__version__}", "Accept": "application/json"})
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             data = json.load(response)
         if not isinstance(data, dict):
@@ -213,7 +215,7 @@ class PokeAPIClient:
             middle = "shiny/" if shiny else ""
             url = f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{middle}{species_id}.png"
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "PokeTokenBar-Windows/0.1"})
+            request = urllib.request.Request(url, headers={"User-Agent": f"PokeTokenBar-Windows/{__version__}"})
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 blob = response.read()
             if not blob:
@@ -231,7 +233,7 @@ class PokeAPIClient:
             return path
         url = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/egg.png"
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "PokeTokenBar-Windows/0.1"})
+            request = urllib.request.Request(url, headers={"User-Agent": f"PokeTokenBar-Windows/{__version__}"})
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 blob = response.read()
             if not blob:
@@ -256,7 +258,7 @@ class PokeAPIClient:
         try:
             request = urllib.request.Request(
                 url,
-                headers={"User-Agent": "PokeTokenBar-Windows/0.1"},
+                headers={"User-Agent": f"PokeTokenBar-Windows/{__version__}"},
             )
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 blob = response.read()

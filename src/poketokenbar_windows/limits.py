@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .models import LimitWindow, ProviderLimits, RateLimitResetCredit
 from .windows import (
     APP_NAME,
@@ -162,7 +163,7 @@ def fetch_claude_limits(timeout: float = 12.0) -> ProviderLimits:
             "Authorization": f"Bearer {token}",
             "anthropic-beta": "oauth-2025-04-20",
             "Accept": "application/json",
-            "User-Agent": "PokeTokenBar-Windows/0.1",
+            "User-Agent": f"PokeTokenBar-Windows/{__version__}",
         },
     )
     try:
@@ -263,7 +264,7 @@ def _codex_request_lines() -> str:
             "method": "initialize",
             "id": 0,
             "params": {
-                "clientInfo": {"name": "poketokenbar_windows", "title": APP_NAME, "version": "0.1.0"},
+                "clientInfo": {"name": "poketokenbar_windows", "title": APP_NAME, "version": __version__},
                 "capabilities": {"experimentalApi": True},
             },
         },
