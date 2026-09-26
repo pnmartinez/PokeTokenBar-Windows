@@ -43,6 +43,40 @@ stage and explain why buying is disabled. The bundled Codex locator change is
 specific to `ChatGPT.app` on macOS; the status-bar sprite optimization and comment
 cleanup do not add Windows-visible features.
 
+## Release audit ledger
+
+**Latest upstream release fully reviewed: [v2.5.4](https://github.com/chattymin/PokeTokenBar/releases/tag/v2.5.4), commit `09fd6003dde877a2a546d261d08a43562fcc572b`, dated 2026-09-12.** Reviewed on 2026-09-26 against the previous documented checkpoint `5f1ef524a104dceee681a21c13a92a7404c6f176` (2026-09-03). The full first-parent range `5f1ef52..09fd600` contains the 25 changes below. “Reviewed” means assessed for this Windows port, not that the two applications have feature parity.
+
+| Upstream commit | Change | Windows disposition |
+| --- | --- | --- |
+| `cd3125a` #267 | Floating pet maximum size 384 px | Deferred: Windows slider currently caps at 192 px; revisit only if requested. |
+| `f2fe5ac` #263 | Absolute quota reset beside countdown | Adapted: Windows supports date/time reset format in `formatting.py`, exposed in Settings. |
+| `b34673a` #252 | Refresh on network reconnection | Deferred: Windows already polls; no network-change listener, low value for two users. |
+| `184c5f4` #282 | Lazy large catch log and sprite cache | Platform-specific AppKit remedy; Windows collection is paged in QML. Reassess if a measured stall appears. |
+| `5bd8d43` #283 | Aside usage provider | Deferred: no known Windows user need. |
+| `c9c016d` #280 | Prefer user account over MCP placeholder in macOS Keychain | macOS credential handling; no direct Windows equivalent. |
+| `b0c6074` #244 | Difficulty multipliers and pet toggle | Deferred: changes game balance and the existing Windows controls; separate product decision. |
+| `dec297a` #254 | Repeat hatch gets 2× growth | **Integrated** in `c25b1c9`, refined in `9d67372`: `state.py` persists `has_growth_boost`, QML shows the badge, `test_core.py` covers repeats and save compatibility. |
+| `b6bf676` #264 | Individual Pokémon values and Pokédex detail | Deferred: substantial save model and UI expansion; not needed for current experience. |
+| `0912c68` #270 | Current-month day-by-day usage | **Integrated/adapted** in `c25b1c9` and later UI refinements: `usage.py:month_daily_series`, Home chart in `qml/Main.qml`, `test_core.py` month series invariants. |
+| `7898065` #275 | Claude macOS Keychain/session-key help | macOS-specific credentials; current Windows Claude fallback is documented separately. |
+| `232108c` #279 | Count Codex total-only turns; Fable 5.1 cache pricing | **Priority candidate for a separate PR.** Windows `usage.py:parse_codex_object` may undercount total-only turns; inspect real fixtures and pricing before porting. |
+| `d4d34e7` #284 | Remove redundant floating-pet toggle | UI-specific; Windows controls are in Settings, not the upstream popover footer. |
+| `087fd0f` #285 | Preserve Dex sprite animation in detail page | Upstream detail-page behavior; Windows has no matching detail page. |
+| `fd008e5` #286 | Graph fill follows Remaining mode | Already adapted for Windows Home gauge; `UPSTREAM.md` limit-display notes record the deliberate behavior. |
+| `5963293` #287 | Save difficulty without advancing progress | Depends on #244 difficulty; deferred with it. |
+| `69ff39b` #289 | Distinguish estimated and unavailable cost | Worth a later correctness review in `pricing.py` and `usage.py`; larger provider-wide change, lower priority than #279. |
+| `2fab082` #290 | Complete localization across upstream app | Platform UI strings differ. Windows has English, Spanish and Galician strings; review individual gaps when observed. |
+| `bb92bd2` #292 | Trailing alignment for quota percentages | Upstream visual polish; no direct parity requirement. |
+| `a8b3ba8` #293 | Plain dollar cost display | Windows currently displays currency amounts in its own UI; no functional port required. |
+| `1a8a725` #295 | Avoid English flash when loading localized Pokémon detail names | Depends on upstream detail page; defer until that surface exists here. |
+| `aaef5db` #274 | Antigravity OAuth file parsing and refresh | Candidate only if Windows Antigravity limits become a user requirement; credentials differ by platform. |
+| `5e08e6f` #296 | Release notes and contributor attribution gate | Upstream release process. Windows release checklist will require notes and verified artifact, without copying its infrastructure. |
+| `065b2e1` #297 | Release tour/screenshots | Documentation-only upstream. |
+| `09fd600` | Bump version to 2.5.4 | Upstream version marker; Windows uses independent `1.x` QML versioning. |
+
+For each new upstream Release, compare the commits after the **last reviewed tag** through its tag, update this ledger with the exact SHA/date and decisions, and only then move the latest-reviewed marker. A release number alone is not proof of code parity. The Windows version number is independent of upstream's version number.
+
 ## Syncing future upstream changes
 
 When upstream changes provider formats or game constants, compare these areas first:

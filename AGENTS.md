@@ -19,6 +19,10 @@ These instructions apply to every human or agent working anywhere in this reposi
 
 Do not assume work is absent merely because it is not on `master`.
 
+## Upstream review
+
+Before claiming that a new upstream release was reviewed or that Windows has parity, read the latest-reviewed tag and SHA in `UPSTREAM.md`, compare every new commit through the new upstream release tag, and record integrated, adapted and deferred changes with reasons there. Windows release numbers are independent of upstream.
+
 ## Branch publication
 
 - Use a descriptive branch name. Codex-created branches use `codex/<short-scope>`; when ownership is useful for coordination, prefer `codex/<owner>-<short-scope>`.

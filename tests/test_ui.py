@@ -31,6 +31,7 @@ from poketokenbar_windows.floating_pet import (
     HoverCallout,
 )
 from poketokenbar_windows.qml_ui import QmlMainWindow, QmlViewModel
+from poketokenbar_windows.updates import UpdateState
 from poketokenbar_windows.state import CatchRecord, GameState, MonState, StateStore
 from poketokenbar_windows.ui import (
     DesktopPet,
@@ -90,6 +91,54 @@ class UITests(unittest.TestCase):
         self.assertEqual(window.minimumWidth(), 520)
         self.assertEqual(window.minimumHeight(), 640)
         self.assertEqual((window.width(), window.height()), (560, 740))
+
+    def test_qml_data_status_tracks_load_warning_and_failure(self):
+        model = QmlViewModel(GameState(), self.settings, FakeUIAPI())
+        self.assertEqual(model.dataStatus, "loading")
+        snapshot = UsageSnapshot(scanned_at=datetime.now(timezone.utc))
+        state = GameState()
+        model.render(RefreshResult(snapshot, {}, {"codex": "read error"}, state, [], None, "Pokemon Egg"))
+        self.assertEqual(model.dataStatus, "warning")
+        model.set_status("Update failed · retry scheduled")
+        self.assertEqual(model.dataStatus, "error")
+        model.set_status("Updating…")
+        self.assertEqual(model.dataStatus, "loading")
+        model.render(RefreshResult(snapshot, {}, {}, state, [], None, "Pokemon Egg"))
+        self.assertEqual(model.dataStatus, "ok")
+
+    def test_update_notice_survives_hidden_window_and_manual_actions(self):
+        window = QmlMainWindow(GameState(), self.settings, FakeUIAPI())
+        self.assertFalse(window.isVisible())
+        requested = []
+        window.view_model.checkUpdatesRequested.connect(lambda: requested.append("check"))
+        window.view_model.openReleaseRequested.connect(lambda: requested.append("open"))
+        window.view_model.set_update_state(UpdateState(
+            "available", "v1.1.0",
+            "https://github.com/pnmartinez/PokeTokenBar-Windows/releases/tag/v1.1.0",
+        ))
+        window.view_model.checkUpdates()
+        window.view_model.openRelease()
+        self.assertEqual(requested, ["check", "open"])
+        window.show()
+        self.app.processEvents()
+        self.assertEqual(window.view_model.updateStatus, "available")
+        self.assertEqual(window.view_model.latestVersion, "v1.1.0")
+        window.close()
+
+    def test_release_link_opens_only_for_available_release(self):
+        controller = TrayController.__new__(TrayController)
+        controller.update_checker = Mock()
+        with patch("poketokenbar_windows.ui.QDesktopServices.openUrl") as open_url:
+            controller.update_checker.state = UpdateState("current", "v1.0.0", "https://github.com/")
+            controller._open_release()
+            open_url.assert_not_called()
+            controller.update_checker.state = UpdateState(
+                "available", "v1.1.0",
+                "https://github.com/pnmartinez/PokeTokenBar-Windows/releases/tag/v1.1.0",
+            )
+            controller._open_release()
+            self.assertEqual(open_url.call_count, 1)
+            self.assertEqual(open_url.call_args.args[0].toString(), controller.update_checker.state.url)
 
     def test_qml_restores_main_window_size_and_position(self):
         first = QmlMainWindow(GameState(), self.settings, FakeUIAPI())

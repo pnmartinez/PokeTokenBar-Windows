@@ -76,9 +76,25 @@ if ($LASTEXITCODE -ne 0) {
     throw "Failed to install PokeTokenBar build dependencies."
 }
 
+$version = (& $python -c "from poketokenbar_windows import __version__; print(__version__)").Trim()
+if ($LASTEXITCODE -ne 0 -or -not $version) {
+    throw "Could not read the package version."
+}
+$releaseTag = "v$version"
+$releaseTags = @(& git tag --points-at HEAD --list $releaseTag)
+$isRelease = $releaseTags -contains $releaseTag
+$shortCommit = $commit.Substring(0, 7)
+$displayVersion = if ($isRelease) { $releaseTag } else { "v$($version)-dev+$shortCommit" }
+
 New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
 try {
+    $versionInfoPath = Join-Path $stagingRoot "version-info.txt"
+    & $python (Join-Path $root "scripts/write_version_info.py") $versionInfoPath --display-version $displayVersion
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not generate the Windows EXE version resource."
+    }
     $pyInstallerArgs = @(
+        "--version-file", $versionInfoPath,
         "--noconfirm", "--clean", "--windowed", "--onedir",
         "--name", "PokeTokenBar-Windows",
         "--distpath", $stagingRoot,
@@ -109,6 +125,9 @@ try {
     [ordered]@{
         branch = $branch
         commit = $commit
+        version = $version
+        display_version = $displayVersion
+        release = $isRelease
         built_utc = (Get-Date).ToUniversalTime().ToString("o")
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stagedApp "build-info.json")
 

@@ -22,11 +22,13 @@ from PySide6.QtCore import (
     QSize,
     Qt,
     QTimer,
+    QUrl,
     Signal,
 )
 from PySide6.QtGui import (
     QAction,
     QColor,
+    QDesktopServices,
     QIcon,
     QImage,
     QMovie,
@@ -129,6 +131,7 @@ from .notifications import (
 from .pet_logic import PET_DEFAULT_SIZE, PET_MAX_SIZE, PET_MIN_SIZE, PET_SIZE_STEP, normalize_pet_size, settings_bool
 from .pokemon import EGG_HATCH_THRESHOLD, PokeAPIClient, egg_price, phase_threshold
 from .qml_ui import QmlMainWindow
+from .updates import UpdateChecker
 from .state import (
     GameState,
     StateStore,
@@ -2052,6 +2055,10 @@ class TrayController(QObject):
         self.window.language_changed.connect(self._set_language)
         self.window.export_requested.connect(self._export_state)
         self.window.import_requested.connect(self._import_state)
+        self.update_checker = UpdateChecker(parent=self)
+        self.update_checker.stateChanged.connect(self.window.view_model.set_update_state)
+        self.window.view_model.checkUpdatesRequested.connect(self.update_checker.check_now)
+        self.window.view_model.openReleaseRequested.connect(self._open_release)
         self._wire_shop_buttons()
         self._apply_theme()
 
@@ -2110,6 +2117,7 @@ class TrayController(QObject):
         self.stale_timer.timeout.connect(self._check_staleness)
         self.stale_timer.start(60_000)
         QTimer.singleShot(0, self.refresh)
+        QTimer.singleShot(0, self.update_checker.start_automatic)
 
     def _wire_shop_buttons(self) -> None:
         if isinstance(self.window, QmlMainWindow):
@@ -2406,6 +2414,11 @@ class TrayController(QObject):
                 translated_text(language, "import_backup"),
                 translated_text(language, "backup_import_error"),
             )
+
+    def _open_release(self) -> None:
+        state = self.update_checker.state
+        if state.status == "available" and state.url:
+            QDesktopServices.openUrl(QUrl(state.url))
 
     def show_window(self) -> None:
         if self.last_result is None:
