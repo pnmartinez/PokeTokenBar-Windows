@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
@@ -410,6 +411,7 @@ class WindowsIntegrationTests(unittest.TestCase):
                 patch.object(app_module, "_configure_windows_identity"),
                 patch.object(app_module, "_hide_console_window"),
                 patch.object(app_module, "refresh_autostart_registration"),
+                patch.object(app_module, "exclusive_state_instance", return_value=nullcontext()),
                 patch("poketokenbar_windows.ui.application_icon"),
                 patch("poketokenbar_windows.ui.TrayController") as controller_type,
                 patch("PySide6.QtWidgets.QApplication") as app_type,
